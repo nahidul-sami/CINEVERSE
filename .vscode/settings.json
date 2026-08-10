@@ -6,8 +6,8 @@
             "server": "localhost",
             "port": 5432,
             "driver": "PostgreSQL",
-            "name": "cineverse db",
-            "database": "Cineverse",
+            "name": "co",
+            "database": "cineverse",
             "username": "postgres"
         }
     ]
