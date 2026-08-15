@@ -62,15 +62,15 @@ exports.getMovieById = async (req, res) => {
 };
 
 exports.createMovie = async (req, res) => {
-    const { title, description, release_year, duration, language, country, rating, poster_url, trailer_url } = req.body;
+    const { title, description, release_year, duration, language,  rating, poster_url, trailer_url } = req.body;
 
     try {
         const newMovie = await pool.query(
             `INSERT INTO movies 
-            (title, description, release_year, duration, language, country, rating, poster_url, trailer_url) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+            (title, description, release_year, duration, language,  rating, poster_url, trailer_url) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
             RETURNING *`,
-            [title, description, release_year, duration, language, country, rating, poster_url, trailer_url]
+            [title, description, release_year, duration, language,  rating, poster_url, trailer_url]
         );
 
         res.status(201).json({ message: "Movie added successfully", movie: newMovie.rows[0] });
