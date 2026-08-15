@@ -7,12 +7,12 @@
 -- 1. USERS
 -- =========================================================
 
-INSERT INTO users (email, password, role)
+INSERT INTO users (name, email, password, role)
 VALUES
-('admin@cineverse.com', 'hashed_admin_password', 'admin'),
-('omi@gmail.com', 'hashed_user_password', 'user'),
-('rahim@gmail.com', 'hashed_user_password', 'user'),
-('karim@gmail.com', 'hashed_user_password', 'user');
+('Admin User', 'admin@cineverse.com', '$2b$10$X3v/jrF/OCVMA3Uc2wfMk.1/D2TWaUfmzZkJd/fgzQ3OjyCXmUGzS', 'admin'),
+('Omi', 'omi@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user'),
+('Rahim', 'rahim@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user'),
+('Karim', 'karim@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user');
 
 
 -- =========================================================
