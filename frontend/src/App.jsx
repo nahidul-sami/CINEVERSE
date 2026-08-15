@@ -27,10 +27,9 @@ function App() {
     setError('');
 
     try {
-      const payload = { email: form.email, password: form.password };
       const result = mode === 'login'
-        ? await loginUser(payload)
-        : await registerUser({ ...form, role: 'user' });
+        ? await loginUser({ email: form.email, password: form.password })
+        : await registerUser({ name: form.name, email: form.email, password: form.password, role: 'user' });
 
       const userToken = result?.data?.token;
 
@@ -55,7 +54,14 @@ function App() {
   };
 
   if (token) {
-    return <Profile onLogout={handleLogout} />;
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#fff' }}>
+        <div style={{ textAlign: 'center' }}>
+          <h1 style={{ fontSize: '3rem', marginBottom: '1rem' }}>Cineverse</h1>
+          <Profile onLogout={handleLogout} />
+        </div>
+      </div>
+    );
   }
 
   return (

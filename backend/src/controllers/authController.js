@@ -2,7 +2,7 @@ const pool = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-// ১. রেজিস্টার ফাংশন
+
 const registerUser = async (req, res) => {
     const { name, email, password, role } = req.body;
 
@@ -36,7 +36,6 @@ const registerUser = async (req, res) => {
     }
 };
 
-// ২. লগইন ফাংশন
 const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
@@ -80,7 +79,6 @@ const loginUser = async (req, res) => {
     }
 };
 
-// ৩. ইউজারের প্রোফাইল দেখা (GET)
 const getUserProfile = async (req, res) => {
     const userId = req.user.user_id;
 
@@ -101,7 +99,7 @@ const getUserProfile = async (req, res) => {
     }
 };
 
-// ৪. ইউজারের প্রোফাইল নাম আপডেট করা (PUT)
+
 const updateUserProfile = async (req, res) => {
     const userId = req.user.user_id;
     const { name } = req.body;
@@ -122,7 +120,7 @@ const updateUserProfile = async (req, res) => {
     }
 };
 
-// সব ফাংশন সঠিকভাবে একসাথে এক্সপোর্ট
+
 module.exports = {
     registerUser,
     loginUser,
