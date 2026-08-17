@@ -4,8 +4,8 @@
 
 
 -- =========================================================
-1. USERS
-=========================================================
+-- 1. USERS
+-- =========================================================
 
 CREATE TABLE users (
     user_id SERIAL PRIMARY KEY,
@@ -18,8 +18,6 @@ CREATE TABLE users (
     CONSTRAINT users_role_check
         CHECK (role IN ('admin', 'user'))
 );
-
-
 -- =========================================================
 -- 2. GENRES
 -- =========================================================
@@ -300,4 +298,16 @@ CREATE TABLE watchlist_share (
 
     CONSTRAINT chk_share_users
         CHECK (shared_by <> shared_with)
+);
+DROP TABLE users CASCADE;
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT users_role_check
+        CHECK (role IN ('admin', 'user'))
 );
