@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Profile from './pages/Profile';
 import { loginUser, registerUser } from './api/authApi';
-
+import MoviesList from './pages/MoviesList';
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [mode, setMode] = useState('login');
@@ -52,7 +52,19 @@ function App() {
     setToken(null);
     setMessage('Logged out successfully');
   };
-
+   //
+   // movielist jsx
+   if (token) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#fff' }}>
+        <div style={{ textAlign: 'center', padding: '24px' }}>
+          <h1 style={{ fontSize: '3rem', marginBottom: '1rem' }}>Cineverse</h1>
+          <Profile onLogout={handleLogout} />
+        </div>
+        <MoviesList />
+      </div>
+    );
+}
   if (token) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#fff' }}>

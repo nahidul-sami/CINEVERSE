@@ -1,5 +1,5 @@
 import axios from "axios";
-
+// axios is lib ... frontend -->> backend request
 const API = axios.create({
     baseURL: "http://localhost:5000/api/movies",
 });
