@@ -3,15 +3,20 @@ const cors = require("cors");
 const pool = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const movieRoutes = require("./routes/movieRoutes");
+const watchlistRoutes = require("./routes/watchlistRoutes");
+const watchHistoryRoutes = require("./routes/watchHistoryRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
 const personRoutes = require("./routes/personRoutes");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/movies", movieRoutes);
+app.use("/api/watchlists", watchlistRoutes);
+app.use("/api/watch-history", watchHistoryRoutes);
+app.use("/api/reviews", reviewRoutes);
 app.use("/api/persons", personRoutes);
 
 app.get("/", (req, res) => {
