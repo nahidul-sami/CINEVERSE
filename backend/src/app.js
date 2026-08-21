@@ -3,6 +3,9 @@ const cors = require("cors");
 const pool = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const movieRoutes = require("./routes/movieRoutes");
+const watchlistRoutes = require("./routes/watchlistRoutes");
+const watchHistoryRoutes = require("./routes/watchHistoryRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
 
 const app = express();
 
@@ -11,6 +14,9 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/movies", movieRoutes);
+app.use("/api/watchlists", watchlistRoutes);
+app.use("/api/watch-history", watchHistoryRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 app.get("/", (req, res) => {
     res.send("Cineverse Backend is Running!");

@@ -245,6 +245,10 @@ CREATE TABLE watch_history (
         CHECK (progress >= 0 AND progress <= 100)
 );
 
+ALTER TABLE watch_history
+    ADD CONSTRAINT unique_user_movie_history
+        UNIQUE (user_id, movie_id);
+
 
 -- =========================================================
 -- 13. WATCHLIST_ITEMS
@@ -298,16 +302,4 @@ CREATE TABLE watchlist_share (
 
     CONSTRAINT chk_share_users
         CHECK (shared_by <> shared_with)
-);
-DROP TABLE users CASCADE;
-CREATE TABLE users (
-    user_id SERIAL PRIMARY KEY,
-    name VARCHAR(150) NOT NULL,
-    email VARCHAR(150) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'user',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT users_role_check
-        CHECK (role IN ('admin', 'user'))
 );
