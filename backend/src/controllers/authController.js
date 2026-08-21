@@ -97,13 +97,7 @@ const getProfile = async (req, res) => {
     }
 };
 
-<<<<<<< HEAD
 const updateProfile = async (req, res) => {
-=======
-
-exports.updateProfile = async (req, res) => {
-    const userId = req.user.user_id;
->>>>>>> 6a6372512b31e2ceee21b9ee5c39b7459191dee8
     const { name } = req.body;
     try {
         const updatedUser = await pool.query(
