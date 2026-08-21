@@ -2,8 +2,7 @@ const pool = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-
-const registerUser = async (req, res) => {
+exports.registerUser = async (req, res) => {
     const { name, email, password, role } = req.body;
 
     try {
@@ -37,7 +36,7 @@ const registerUser = async (req, res) => {
 };
 
 
-const loginUser = async (req, res) => {
+exports.loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     try {
@@ -80,25 +79,24 @@ const loginUser = async (req, res) => {
     }
 };
 
-const getUserProfile = async (req, res) => {
-    const userId = req.user.user_id;
-
+exports.getProfile = async (req, res) => {
     try {
-        const user = await pool.query(
+        const userResult = await pool.query(
             "SELECT user_id, name, email, role, created_at FROM users WHERE user_id = $1",
-            [userId]
+            [req.user.user_id]
         );
 
-        if (user.rows.length === 0) {
+        if (userResult.rows.length === 0) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        res.status(200).json(user.rows[0]);
+        res.status(200).json({ user: userResult.rows[0] });
     } catch (error) {
         console.error("GET PROFILE ERROR:", error);
         res.status(500).json({ message: "Server error while fetching profile", error: error.message });
     }
 };
+
 
 const updateUserProfile = async (req, res) => {
     const userId = req.user.user_id;
@@ -107,23 +105,16 @@ const updateUserProfile = async (req, res) => {
     try {
         const updatedUser = await pool.query(
             "UPDATE users SET name = $1 WHERE user_id = $2 RETURNING user_id, name, email, role, created_at",
-            [name, userId]
+            [name, req.user.user_id]
         );
 
-        res.status(200).json({
-            message: "Profile updated successfully",
-            user: updatedUser.rows[0]
-        });
+        if (updatedUser.rows.length === 0) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        res.status(200).json({ message: "Profile updated successfully", user: updatedUser.rows[0] });
     } catch (error) {
         console.error("UPDATE PROFILE ERROR:", error);
         res.status(500).json({ message: "Server error while updating profile", error: error.message });
     }
-};
-
-
-module.exports = {
-    registerUser,
-    loginUser,
-    getUserProfile,
-    updateUserProfile
 };
