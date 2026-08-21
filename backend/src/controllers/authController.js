@@ -98,20 +98,17 @@ exports.getProfile = async (req, res) => {
 };
 
 
-const updateUserProfile = async (req, res) => {
+exports.updateProfile = async (req, res) => {
     const userId = req.user.user_id;
     const { name } = req.body;
-
     try {
         const updatedUser = await pool.query(
             "UPDATE users SET name = $1 WHERE user_id = $2 RETURNING user_id, name, email, role, created_at",
             [name, req.user.user_id]
         );
-
         if (updatedUser.rows.length === 0) {
             return res.status(404).json({ message: "User not found" });
         }
-
         res.status(200).json({ message: "Profile updated successfully", user: updatedUser.rows[0] });
     } catch (error) {
         console.error("UPDATE PROFILE ERROR:", error);
