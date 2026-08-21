@@ -7,7 +7,7 @@
             "port": 5432,
             "driver": "PostgreSQL",
             "name": "cineverse",
-            "database": "cineverse",
+            "database": "Cineverse",
             "username": "postgres"
         }
     ]

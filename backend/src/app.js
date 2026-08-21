@@ -3,6 +3,7 @@ const cors = require("cors");
 const pool = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const movieRoutes = require("./routes/movieRoutes");
+const personRoutes = require("./routes/personRoutes");
 
 const app = express();
 
@@ -11,6 +12,7 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/movies", movieRoutes);
+app.use("/api/persons", personRoutes);
 
 app.get("/", (req, res) => {
     res.send("Cineverse Backend is Running!");

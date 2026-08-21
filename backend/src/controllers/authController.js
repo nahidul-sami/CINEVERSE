@@ -36,6 +36,7 @@ const registerUser = async (req, res) => {
     }
 };
 
+
 const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
@@ -98,7 +99,6 @@ const getUserProfile = async (req, res) => {
         res.status(500).json({ message: "Server error while fetching profile", error: error.message });
     }
 };
-
 
 const updateUserProfile = async (req, res) => {
     const userId = req.user.user_id;
