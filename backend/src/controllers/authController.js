@@ -79,7 +79,7 @@ exports.loginUser = async (req, res) => {
     }
 };
 
-exports.getProfile = async (req, res) => {
+const getProfile = async (req, res) => {
     try {
         const userResult = await pool.query(
             "SELECT user_id, name, email, role, created_at FROM users WHERE user_id = $1",
@@ -97,9 +97,7 @@ exports.getProfile = async (req, res) => {
     }
 };
 
-
-const updateUserProfile = async (req, res) => {
-    const userId = req.user.user_id;
+const updateProfile = async (req, res) => {
     const { name } = req.body;
 
     try {
@@ -117,4 +115,11 @@ const updateUserProfile = async (req, res) => {
         console.error("UPDATE PROFILE ERROR:", error);
         res.status(500).json({ message: "Server error while updating profile", error: error.message });
     }
+};
+
+module.exports = {
+    registerUser: exports.registerUser,
+    loginUser: exports.loginUser,
+    getProfile,
+    updateProfile
 };
