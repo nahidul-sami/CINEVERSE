@@ -34,6 +34,7 @@ function App() {
       const userToken = result?.data?.token;
 
       if (userToken) {
+        localStorage.setItem('token', userToken);
         setToken(userToken);
         setMessage(mode === 'login' ? 'Login successful!' : 'Registration successful!');
         setForm({ name: '', email: '', password: '' });

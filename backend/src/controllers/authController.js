@@ -35,6 +35,7 @@ exports.registerUser = async (req, res) => {
     }
 };
 
+
 exports.loginUser = async (req, res) => {
     const { email, password } = req.body;
 
@@ -96,7 +97,9 @@ exports.getProfile = async (req, res) => {
     }
 };
 
-exports.updateProfile = async (req, res) => {
+
+const updateUserProfile = async (req, res) => {
+    const userId = req.user.user_id;
     const { name } = req.body;
 
     try {

@@ -1,14 +1,10 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getProfile, updateProfile } from "../api/authApi";
 
 const Profile = ({ onLogout }) => {
     const [user, setUser] = useState(null);
     const [newName, setNewName] = useState("");
     const [authMessage, setAuthMessage] = useState("");
-
-    useEffect(() => {
-        fetchUserProfile();
-    }, []);
 
     const fetchUserProfile = async () => {
         const token = localStorage.getItem("token");
@@ -35,9 +31,15 @@ const Profile = ({ onLogout }) => {
             }
 
             setUser(false);
-            setAuthMessage("Unable to load profile right now.");
+            setAuthMessage("Server is temporarily unavailable. Your login is still saved.");
         }
     };
+
+    useEffect(() => {
+        const profileRequest = setTimeout(fetchUserProfile, 0);
+
+        return () => clearTimeout(profileRequest);
+    }, []);
 
     const handleUpdate = async (e) => {
         e.preventDefault();
