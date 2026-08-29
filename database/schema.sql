@@ -303,3 +303,23 @@ CREATE TABLE watchlist_share (
     CONSTRAINT chk_share_users
         CHECK (shared_by <> shared_with)
 );
+-- =========================================================
+-- 15. NOTIFICATIONS
+-- =========================================================
+
+CREATE TABLE notifications (
+    notification_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    share_id INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_notification_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_notification_share
+        FOREIGN KEY (share_id)
+        REFERENCES watchlist_share(share_id)
+        ON DELETE CASCADE
+);

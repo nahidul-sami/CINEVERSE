@@ -6,11 +6,11 @@ const {
     updateReview,
     deleteReview
 } = require("../controllers/reviewController");
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken,verifyOwnership } = require("../middleware/authMiddleware");
 
 router.get("/movie/:movieId", getMovieReviews);
 router.post("/", verifyToken, createReview);
-router.put("/:id", verifyToken, updateReview);
-router.delete("/:id", verifyToken, deleteReview);
+router.put("/:id", verifyToken, verifyOwnership("reviews", "review_id"), updateReview);
+router.delete("/:id", verifyToken, verifyOwnership("reviews", "review_id"), deleteReview);
 
 module.exports = router;

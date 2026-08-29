@@ -6,13 +6,13 @@ const {
     updateWatchProgress,
     deleteFromWatchHistory
 } = require("../controllers/watchHistoryController");
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken,verifyOwnership} = require("../middleware/authMiddleware");
 
 router.use(verifyToken);
 
 router.get("/", getWatchHistory);
 router.post("/", addToWatchHistory);
-router.put("/:id/progress", updateWatchProgress);
-router.delete("/:id", deleteFromWatchHistory);
+router.put("/:id/progress", verifyOwnership("watch_history", "history_id"), updateWatchProgress);
+router.delete("/:id", verifyOwnership("watch_history", "history_id"), deleteFromWatchHistory);
 
 module.exports = router;

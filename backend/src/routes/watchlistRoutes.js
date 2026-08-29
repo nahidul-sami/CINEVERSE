@@ -9,15 +9,19 @@ const {
     addMovieToWatchlist,
     removeMovieFromWatchlist
 } = require("../controllers/watchlistController");
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken,verifyOwnership } = require("../middleware/authMiddleware");
 
 router.use(verifyToken);
 
 router.get("/", getWatchlists);
 router.get("/:id", getWatchlistById);
 router.post("/", createWatchlist);
-router.put("/:id", updateWatchlist);
-router.delete("/:id", deleteWatchlist);
+
+
+router.put("/:id", verifyOwnership("watchlist", "watchlist_id"), updateWatchlist);
+router.delete("/:id", verifyOwnership("watchlist", "watchlist_id"), deleteWatchlist);
+
+
 router.post("/:id/movies", addMovieToWatchlist);
 router.delete("/:id/movies/:movieId", removeMovieFromWatchlist);
 

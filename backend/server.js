@@ -2,6 +2,12 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const authRoutes = require("./src/routes/authRoutes");
+const movieRoutes = require("./src/routes/movieRoutes");
+const watchlistRoutes = require("./src/routes/watchlistRoutes");
+const watchHistoryRoutes = require("./src/routes/watchHistoryRoutes");
+const reviewRoutes = require("./src/routes/reviewRoutes");
+const personRoutes = require("./src/routes/personRoutes");
 
 
 const app = express();
@@ -19,6 +25,7 @@ app.use("/api/watch-history", watchHistoryRoutes);
 app.use("/api/watchlist", watchlistRoutes);
 
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

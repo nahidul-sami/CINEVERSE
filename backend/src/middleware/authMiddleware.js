@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const pool = require("../config/db");
 
 const verifyToken = (req, res, next) => {
     const authHeader = req.headers.authorization;
@@ -26,4 +27,31 @@ const verifyAdmin = (req, res, next) => {
     }
 };
 
-module.exports = { verifyToken, verifyAdmin };
+// Verify that the user is the owner of a specific resource
+const verifyOwnership = (tableName, idColumn) => {
+    return async (req, res, next) => {
+        const resourceId = req.params.id;
+        const userId = req.user.user_id;
+
+        try {
+            const query = `SELECT user_id FROM ${tableName} WHERE ${idColumn} = $1`;
+            const result = await pool.query(query, [resourceId]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ message: "Resource not found" });
+            }
+
+            
+            if (result.rows[0].user_id !== userId && req.user.role !== "admin") {
+                return res.status(403).json({ message: "Access denied. You do not own this resource." });
+            }
+
+            next();
+        } catch (error) {
+            console.error("OWNERSHIP VERIFICATION ERROR:", error);
+            res.status(500).json({ message: "Authorization check failed", error: error.message });
+        }
+    };
+};
+
+module.exports = { verifyToken, verifyAdmin, verifyOwnership };
