@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -9,7 +9,6 @@ import {
   Clock3,
   Film,
   Flame,
-  History,
   MessageSquareText,
   MonitorPlay,
   Play,
@@ -74,18 +73,40 @@ function App() {
   const [movieForm, setMovieForm] = useState({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', trailer_url: '' });
   const [genreForm, setGenreForm] = useState({ name: '', description: '' });
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
+  const toastTimer = useRef(null);
 
-  const showToast = (message, type = 'success') => {
+  const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
-    clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => setToast(null), 2600);
-  };
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } catch (error) {
+      void error;
+    }
+
+    localStorage.removeItem('token');
+    localStorage.removeItem('cineverse_user');
+    setToken(null);
+    setUser(null);
+    setRoute('/');
+    window.location.hash = '/';
+  }, []);
 
   useEffect(() => {
     const handleHashChange = () => setRoute(getHashRoute());
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  useEffect(() => {
+    if (getHashRoute() !== route) {
+      window.location.hash = route;
+    }
+  }, [route]);
 
   useEffect(() => {
     if (token) {
@@ -104,20 +125,17 @@ function App() {
           showToast(error?.response?.data?.message || 'Could not fetch profile', 'error');
         });
     }
-  }, [token]);
+  }, [token, handleLogout, showToast]);
 
   useEffect(() => {
     const autoRoute = route === '/login' || route === '/register' ? route : route === '/' && user?.role === 'admin' ? '/admin' : route;
     if (autoRoute !== route) {
-      setRoute(autoRoute);
       window.location.hash = autoRoute;
     }
   }, [route, user]);
 
   useEffect(() => {
     if (!token) {
-      setWatchHistory([]);
-      setWatchlists([]);
       return;
     }
 
@@ -138,7 +156,7 @@ function App() {
     };
 
     loadDashboardData();
-  }, [token]);
+  }, [token, showToast]);
 
   useEffect(() => {
     const loadGenres = async () => {
@@ -167,13 +185,11 @@ function App() {
 
     loadGenres();
     loadMovies();
-  }, [selectedGenreId]);
+  }, [selectedGenreId, showToast]);
 
   useEffect(() => {
     const slug = route.match(/^\/movie\/(\d+)$/);
     if (!slug) {
-      setMovieDetail(null);
-      setReviews([]);
       return;
     }
 
@@ -197,7 +213,7 @@ function App() {
     };
 
     fetchMovieDetails();
-  }, [route]);
+  }, [route, showToast]);
 
   const filteredMovies = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
@@ -219,20 +235,6 @@ function App() {
   const featuredMovie = filteredMovies[0] || movieDetail || movies[0] || null;
 
   const selectedMovie = movieDetail || (filteredMovies[0] ?? null);
-
-  const handleLogout = async () => {
-    try {
-      await authApi.logout();
-    } catch {
-    }
-
-    localStorage.removeItem('token');
-    localStorage.removeItem('cineverse_user');
-    setToken(null);
-    setUser(null);
-    setRoute('/');
-    window.location.hash = '/';
-  };
 
   const handleAuthInput = (event) => {
     const { name, value } = event.target;
@@ -268,7 +270,6 @@ function App() {
   };
 
   const handleMovieOpen = (movieId) => {
-    window.location.hash = `/movie/${movieId}`;
     setRoute(`/movie/${movieId}`);
   };
 
