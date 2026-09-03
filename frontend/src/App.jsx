@@ -220,7 +220,12 @@ function App() {
 
   const selectedMovie = movieDetail || (filteredMovies[0] ?? null);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch {
+    }
+
     localStorage.removeItem('token');
     localStorage.removeItem('cineverse_user');
     setToken(null);

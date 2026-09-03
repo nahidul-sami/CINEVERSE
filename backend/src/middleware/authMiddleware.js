@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
 const pool = require("../config/db");
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -12,6 +12,15 @@ const verifyToken = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const revokedToken = await pool.query(
+            "SELECT token_jti FROM revoked_tokens WHERE token_jti = $1",
+            [decoded.jti]
+        );
+
+        if (revokedToken.rows.length > 0) {
+            return res.status(401).json({ message: "Token has been revoked. Please log in again." });
+        }
+
         req.user = decoded;
         next();
     } catch (error) {
