@@ -17,8 +17,10 @@ const Profile = ({ onLogout }) => {
 
         try {
             const res = await getProfile();
-            setUser(res.data);
-            setNewName(res.data.name || "");
+            const profileUser = res?.data?.user ?? res?.data ?? {};
+
+            setUser(profileUser);
+            setNewName(profileUser.name || "");
             setAuthMessage("");
         } catch (err) {
             console.error("Error fetching profile:", err);
