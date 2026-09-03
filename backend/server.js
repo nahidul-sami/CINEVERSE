@@ -8,6 +8,7 @@ const watchlistRoutes = require("./src/routes/watchlistRoutes");
 const watchHistoryRoutes = require("./src/routes/watchHistoryRoutes");
 const reviewRoutes = require("./src/routes/reviewRoutes");
 const personRoutes = require("./src/routes/personRoutes");
+const genreRoutes = require("./src/routes/genreRoutes");
 
 
 const app = express();
@@ -23,6 +24,7 @@ app.use("/api/persons", personRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/watch-history", watchHistoryRoutes);
 app.use("/api/watchlist", watchlistRoutes);
+app.use("/api/genres", genreRoutes);
 
 const PORT = process.env.PORT || 5000;
 

@@ -1,18 +1,23 @@
 const pool = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
 exports.registerUser = async (req, res) => {
     const { name, email, password, role } = req.body;
 
     try {
+        if (!name || !email || !password || !name.trim() || !email.trim() || !password.trim()) {
+            return res.status(400).json({ message: "Name, email, and password are required" });
+        }
+
         const userExists = await pool.query(
             "SELECT * FROM users WHERE email = $1",
             [email]
         );
 
         if (userExists.rows.length > 0) {
-            return res.status(400).json({ message: "User already exists with this email" });
+            return res.status(409).json({ message: "User already exists with this email" });
         }
 
         const salt = await bcrypt.genSalt(10);
@@ -57,7 +62,7 @@ exports.loginUser = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { user_id: user.user_id, role: user.role },
+            { user_id: user.user_id, role: user.role, jti: crypto.randomUUID() },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
@@ -76,6 +81,20 @@ exports.loginUser = async (req, res) => {
     } catch (error) {
         console.error("LOGIN ERROR:", error);
         res.status(500).json({ message: "Server error during login", error: error.message });
+    }
+};
+
+exports.logoutUser = async (req, res) => {
+    try {
+        await pool.query(
+            "INSERT INTO revoked_tokens (token_jti, expires_at) VALUES ($1, TO_TIMESTAMP($2)) ON CONFLICT DO NOTHING",
+            [req.user.jti, req.user.exp]
+        );
+
+        res.status(200).json({ message: "Logout successful" });
+    } catch (error) {
+        console.error("LOGOUT ERROR:", error);
+        res.status(500).json({ message: "Server error during logout", error: error.message });
     }
 };
 
@@ -117,6 +136,7 @@ const updateProfile = async (req, res) => {
 module.exports = {
     registerUser: exports.registerUser,
     loginUser: exports.loginUser,
+    logoutUser: exports.logoutUser,
     getProfile,
     updateProfile
 };
