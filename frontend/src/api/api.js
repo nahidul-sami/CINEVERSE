@@ -47,6 +47,7 @@ export const movieApi = {
   getAll: (params = {}) => API.get('/movies', { params }),
   getById: (movieId) => API.get(`/movies/${movieId}`),
   create: (payload) => API.post('/movies', payload),
+  remove: (movieId) => API.delete(`/movies/${movieId}`),
 };
 
 export const genreApi = {
@@ -80,6 +81,16 @@ export const watchlistApi = {
   remove: (watchlistId) => API.delete(`/watchlists/${watchlistId}`),
   addMovie: (watchlistId, payload) => API.post(`/watchlists/${watchlistId}/movies`, payload),
   removeMovie: (watchlistId, movieId) => API.delete(`/watchlists/${watchlistId}/movies/${movieId}`),
+};
+
+export const friendshipApi = {
+  getFriends: () => API.get('/friendships'),
+  getPending: () => API.get('/friendships/pending'),
+  getSent: () => API.get('/friendships/sent'),
+  lookupUserByEmail: (email) => API.get('/friendships/lookup', { params: { email } }),
+  sendRequest: (payload) => API.post('/friendships', payload),
+  respond: (friendshipId, payload) => API.put(`/friendships/${friendshipId}`, payload),
+  remove: (friendshipId) => API.delete(`/friendships/${friendshipId}`),
 };
 
 export const personApi = {

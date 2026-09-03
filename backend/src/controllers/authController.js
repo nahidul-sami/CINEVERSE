@@ -4,7 +4,10 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
 exports.registerUser = async (req, res) => {
-    const { name, email, password, role } = req.body;
+    // "role" is intentionally NOT read from req.body — public registration
+    // must never let the client choose its own role. Admins are provisioned
+    // only via direct database seeding (see database/migrations/002_seed_admins.sql).
+    const { name, email, password } = req.body;
 
     try {
         if (!name || !email || !password || !name.trim() || !email.trim() || !password.trim()) {
@@ -23,10 +26,9 @@ exports.registerUser = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        const userRole = role || "user";
         const newUser = await pool.query(
-            "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING user_id, name, email, role, created_at",
-            [name, email, hashedPassword, userRole]
+            "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, 'user') RETURNING user_id, name, email, role, created_at",
+            [name, email, hashedPassword]
         );
 
         res.status(201).json({

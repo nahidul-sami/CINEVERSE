@@ -9,6 +9,7 @@ const watchHistoryRoutes = require("./src/routes/watchHistoryRoutes");
 const reviewRoutes = require("./src/routes/reviewRoutes");
 const personRoutes = require("./src/routes/personRoutes");
 const genreRoutes = require("./src/routes/genreRoutes");
+const friendshipRoutes = require("./src/routes/friendshipRoutes");
 
 
 const app = express();
@@ -23,8 +24,9 @@ app.use("/api/movies", movieRoutes);
 app.use("/api/persons", personRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/watch-history", watchHistoryRoutes);
-app.use("/api/watchlist", watchlistRoutes);
+app.use("/api/watchlists", watchlistRoutes);
 app.use("/api/genres", genreRoutes);
+app.use("/api/friendships", friendshipRoutes);
 
 const PORT = process.env.PORT || 5000;
 
