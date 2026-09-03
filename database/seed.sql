@@ -300,3 +300,12 @@ INSERT INTO watchlist_share
 VALUES
 (1, 2, 3),
 (2, 2, 4);
+
+
+
+
+-- admin
+INSERT INTO users (name, email, password, role) VALUES
+('Omi',  'omi21@gmail.com',  '$2b$10$SCQsvkDEb37lcsz49iofY.hSPuJRa/Pdal8.7jE7VSOTUIxJ8jZQS', 'admin'),
+('Sami', 'sami@gmail.com', '$2b$10$74dLGj.syQ3gpNwGTq.GaefzGgEQuDmuR5BYXT1A8BopZmAVj2.2C', 'admin')
+ON CONFLICT (email) DO NOTHING;
