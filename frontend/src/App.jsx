@@ -9,7 +9,7 @@ import {
   Clock3,
   Film,
   Flame,
-  History,
+  LoaderCircle,
   MessageSquareText,
   MonitorPlay,
   Play,
@@ -76,13 +76,21 @@ function App() {
   const [reviewRating, setReviewRating] = useState(5);
   const [watchProgress, setWatchProgress] = useState(0);
   const [dashboardTab, setDashboardTab] = useState('Profile');
-  const [adminTab, setAdminTab] = useState('Movies');
+  const [adminTab, setAdminTab] = useState('Manage Movies');
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState({ movies: false, detail: false, profile: false, history: false, watchlists: false, friends: false, page: true });
   const [friendEmail, setFriendEmail] = useState('');
   const [movieForm, setMovieForm] = useState({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', trailer_url: '' });
   const [genreForm, setGenreForm] = useState({ name: '', description: '' });
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
+  const [movieSearch, setMovieSearch] = useState('');
+  const [movieModalOpen, setMovieModalOpen] = useState(false);
+  const [movieSubmitting, setMovieSubmitting] = useState(false);
+  const [deleteMovieId, setDeleteMovieId] = useState(null);
+  const [assignMovie, setAssignMovie] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [creditSubmitting, setCreditSubmitting] = useState(false);
+  const toastTimer = useRef(null);
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
@@ -101,6 +109,11 @@ function App() {
     localStorage.removeItem('cineverse_user');
     setToken(null);
     setUser(null);
+    setWatchHistory([]);
+    setWatchlists([]);
+    setFriends([]);
+    setPendingRequests([]);
+    setSentRequests([]);
     setRoute('/');
     window.location.hash = '/';
   }, []);
@@ -144,11 +157,7 @@ function App() {
   }, [route, user]);
 
   useEffect(() => {
-    if (!token) {
-      setWatchHistory([]);
-      setWatchlists([]);
-      return;
-    }
+    if (!token) return;
 
     const loadDashboardData = async () => {
       setLoading((prev) => ({ ...prev, history: true, watchlists: true, friends: true }));
@@ -252,20 +261,6 @@ function App() {
   const featuredMovie = filteredMovies[0] || movieDetail || movies[0] || null;
 
   const selectedMovie = movieDetail || (filteredMovies[0] ?? null);
-
-  const handleLogout = async () => {
-    try {
-      await authApi.logout();
-    } catch {
-    }
-
-    localStorage.removeItem('token');
-    localStorage.removeItem('cineverse_user');
-    setToken(null);
-    setUser(null);
-    setRoute('/');
-    window.location.hash = '/';
-  };
 
   const handleAuthInput = (event) => {
     const { name, value } = event.target;
