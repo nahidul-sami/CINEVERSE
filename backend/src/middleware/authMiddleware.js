@@ -10,8 +10,22 @@ const verifyToken = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
+    if (!process.env.JWT_SECRET) {
+        console.error("AUTH ERROR: JWT_SECRET is not configured");
+        return res.status(500).json({ message: "Authentication service is not configured" });
+    }
+
+    let decoded;
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (!decoded.jti || !decoded.user_id) {
+            return res.status(401).json({ message: "Invalid token." });
+        }
+    } catch (error) {
+        return res.status(401).json({ message: "Invalid or expired token." });
+    }
+
+    try {
         const revokedToken = await pool.query(
             "SELECT token_jti FROM revoked_tokens WHERE token_jti = $1",
             [decoded.jti]
@@ -24,7 +38,8 @@ const verifyToken = async (req, res, next) => {
         req.user = decoded;
         next();
     } catch (error) {
-        res.status(403).json({ message: "Invalid or expired token." });
+        console.error("TOKEN REVOCATION CHECK ERROR:", error);
+        res.status(500).json({ message: "Authentication service unavailable" });
     }
 };
 
@@ -51,7 +66,7 @@ const verifyOwnership = (tableName, idColumn) => {
             }
 
             
-            if (result.rows[0].user_id !== userId && req.user.role !== "admin") {
+            if (Number(result.rows[0].user_id) !== Number(userId) && req.user.role !== "admin") {
                 return res.status(403).json({ message: "Access denied. You do not own this resource." });
             }
 

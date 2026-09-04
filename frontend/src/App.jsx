@@ -273,7 +273,7 @@ function App() {
     try {
       const result = authMode === 'login'
         ? await authApi.login({ email: authForm.email, password: authForm.password })
-        : await authApi.register({ name: authForm.name, email: authForm.email, password: authForm.password, role: 'user' });
+        : await authApi.register({ name: authForm.name, email: authForm.email, password: authForm.password });
 
       if (authMode === 'login') {
         const { token: jwt, user: authUser } = result.data;

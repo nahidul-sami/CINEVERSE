@@ -7,10 +7,12 @@ exports.registerUser = async (req, res) => {
     // "role" is intentionally NOT read from req.body — public registration
     // must never let the client choose its own role. Admins are provisioned
     // only via direct database seeding (see database/migrations/002_seed_admins.sql).
-    const { name, email, password } = req.body;
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const password = typeof req.body.password === "string" ? req.body.password : "";
 
     try {
-        if (!name || !email || !password || !name.trim() || !email.trim() || !password.trim()) {
+        if (!name || !email || !password.trim()) {
             return res.status(400).json({ message: "Name, email, and password are required" });
         }
 
@@ -38,15 +40,20 @@ exports.registerUser = async (req, res) => {
 
     } catch (error) {
         console.error("REGISTER ERROR:", error);
-        res.status(500).json({ message: "Server error during registration", error: error.message });
+        res.status(500).json({ message: "Server error during registration" });
     }
 };
 
 
 exports.loginUser = async (req, res) => {
-    const { email, password } = req.body;
+    const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const password = typeof req.body.password === "string" ? req.body.password : "";
 
     try {
+        if (!email || !password) {
+            return res.status(400).json({ message: "Email and password are required" });
+        }
+
         const userResult = await pool.query(
             "SELECT * FROM users WHERE email = $1",
             [email]
@@ -82,7 +89,7 @@ exports.loginUser = async (req, res) => {
 
     } catch (error) {
         console.error("LOGIN ERROR:", error);
-        res.status(500).json({ message: "Server error during login", error: error.message });
+        res.status(500).json({ message: "Server error during login" });
     }
 };
 
@@ -96,7 +103,7 @@ exports.logoutUser = async (req, res) => {
         res.status(200).json({ message: "Logout successful" });
     } catch (error) {
         console.error("LOGOUT ERROR:", error);
-        res.status(500).json({ message: "Server error during logout", error: error.message });
+        res.status(500).json({ message: "Server error during logout" });
     }
 };
 
@@ -114,12 +121,17 @@ const getProfile = async (req, res) => {
         res.status(200).json({ user: userResult.rows[0] });
     } catch (error) {
         console.error("GET PROFILE ERROR:", error);
-        res.status(500).json({ message: "Server error while fetching profile", error: error.message });
+        res.status(500).json({ message: "Server error while fetching profile" });
     }
 };
 
 const updateProfile = async (req, res) => {
-    const { name } = req.body;
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+
+    if (!name) {
+        return res.status(400).json({ message: "Name is required" });
+    }
+
     try {
         const updatedUser = await pool.query(
             "UPDATE users SET name = $1 WHERE user_id = $2 RETURNING user_id, name, email, role, created_at",
@@ -131,7 +143,7 @@ const updateProfile = async (req, res) => {
         res.status(200).json({ message: "Profile updated successfully", user: updatedUser.rows[0] });
     } catch (error) {
         console.error("UPDATE PROFILE ERROR:", error);
-        res.status(500).json({ message: "Server error while updating profile", error: error.message });
+        res.status(500).json({ message: "Server error while updating profile" });
     }
 };
 
