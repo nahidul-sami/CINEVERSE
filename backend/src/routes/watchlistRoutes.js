@@ -7,15 +7,21 @@ const {
     updateWatchlist,
     deleteWatchlist,
     addMovieToWatchlist,
-    removeMovieFromWatchlist
+    removeMovieFromWatchlist,
+    shareWatchlist,
+    getSharedWithMe,
+    getSharedWatchlistById
 } = require("../controllers/watchlistController");
 const { verifyToken,verifyOwnership } = require("../middleware/authMiddleware");
 
 router.use(verifyToken);
 
 router.get("/", getWatchlists);
+router.get("/shared-with-me", getSharedWithMe);
+router.get("/shared/:id", getSharedWatchlistById);
 router.get("/:id", getWatchlistById);
 router.post("/", createWatchlist);
+router.post("/:id/share", shareWatchlist);
 
 
 router.put("/:id", verifyOwnership("watchlist", "watchlist_id"), updateWatchlist);

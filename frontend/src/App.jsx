@@ -35,6 +35,7 @@ import {
   watchHistoryApi,
   watchlistApi,
   friendshipApi,
+  notificationApi,
 } from './api/api';
 import Landing from './components/Landing';
 
@@ -47,6 +48,25 @@ const getHashRoute = () => {
 };
 
 const toDisplayNumber = (value) => Number(value ?? 0).toFixed(1);
+
+const timeAgo = (dateString) => {
+  const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
+  if (Number.isNaN(seconds) || seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  const months = Math.floor(days / 30);
+  return `${months} ${months === 1 ? 'month' : 'months'} ago`;
+};
+
+const getYouTubeEmbedUrl = (url) => {
+  if (!url) return null;
+  const match = url.match(/(?:v=|youtu\.be\/)([\w-]{11})/);
+  return match ? `https://www.youtube.com/embed/${match[1]}?autoplay=1` : null;
+};
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'));
@@ -66,6 +86,7 @@ function App() {
   const [reviews, setReviews] = useState([]);
   const [watchHistory, setWatchHistory] = useState([]);
   const [watchlists, setWatchlists] = useState([]);
+  const [sharedWatchlists, setSharedWatchlists] = useState([]);
   const [friends, setFriends] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
@@ -74,12 +95,26 @@ function App() {
   const [sortBy, setSortBy] = useState('rating');
   const [reviewText, setReviewText] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [editingReviewId, setEditingReviewId] = useState(null);
+  const [editReviewText, setEditReviewText] = useState('');
+  const [editReviewRating, setEditReviewRating] = useState(5);
+  const [editHoverRating, setEditHoverRating] = useState(0);
+  const [deleteReviewId, setDeleteReviewId] = useState(null);
+  const [reviewSort, setReviewSort] = useState('recent');
   const [watchProgress, setWatchProgress] = useState(0);
   const [dashboardTab, setDashboardTab] = useState('Profile');
   const [adminTab, setAdminTab] = useState('Manage Movies');
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState({ movies: false, detail: false, profile: false, history: false, watchlists: false, friends: false, page: true });
   const [friendEmail, setFriendEmail] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [sharePickerId, setSharePickerId] = useState(null);
+  const [expandedSharedId, setExpandedSharedId] = useState(null);
+  const [sharedWatchlistDetails, setSharedWatchlistDetails] = useState({});
+  const [sharedWatchlistHighlight, setSharedWatchlistHighlight] = useState(false);
   const [movieForm, setMovieForm] = useState({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', trailer_url: '' });
   const [genreForm, setGenreForm] = useState({ name: '', description: '' });
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
@@ -90,13 +125,27 @@ function App() {
   const [assignMovie, setAssignMovie] = useState(null);
   const [people, setPeople] = useState([]);
   const [creditSubmitting, setCreditSubmitting] = useState(false);
+  const [trailerOpen, setTrailerOpen] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState(null);
   const toastTimer = useRef(null);
+  const notificationMenuRef = useRef(null);
+  const sharedWatchlistRef = useRef(null);
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }, []);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const response = await notificationApi.getAll();
+      setNotifications(response.data?.notifications || []);
+      setUnreadCount(Number(response.data?.unread_count || 0));
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not load notifications', 'error');
+    }
+  }, [showToast]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -111,9 +160,13 @@ function App() {
     setUser(null);
     setWatchHistory([]);
     setWatchlists([]);
+    setSharedWatchlists([]);
     setFriends([]);
     setPendingRequests([]);
     setSentRequests([]);
+    setNotifications([]);
+    setUnreadCount(0);
+    setNotificationsOpen(false);
     setRoute('/');
     window.location.hash = '/';
   }, []);
@@ -150,6 +203,25 @@ function App() {
   }, [token, handleLogout, showToast]);
 
   useEffect(() => {
+    if (!token) return undefined;
+
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [token, fetchNotifications]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (notificationMenuRef.current && !notificationMenuRef.current.contains(event.target)) {
+        setNotificationsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
     const autoRoute = route === '/login' || route === '/register' ? route : route === '/admin' && user?.role !== 'admin' ? '/login' : route === '/' && user?.role === 'admin' ? '/admin' : route;
     if (autoRoute !== route) {
       window.location.hash = autoRoute;
@@ -162,18 +234,20 @@ function App() {
     const loadDashboardData = async () => {
       setLoading((prev) => ({ ...prev, history: true, watchlists: true, friends: true }));
       try {
-        const [historyRes, listRes, friendsRes, pendingRes, sentRes] = await Promise.all([
+        const [historyRes, listRes, friendsRes, pendingRes, sentRes, sharedRes] = await Promise.all([
           watchHistoryApi.getAll(),
           watchlistApi.getAll(),
           friendshipApi.getFriends(),
           friendshipApi.getPending(),
           friendshipApi.getSent(),
+          watchlistApi.getSharedWithMe(),
         ]);
         setWatchHistory(historyRes.data?.history || []);
         setWatchlists(listRes.data?.watchlists || []);
         setFriends(friendsRes.data?.friends || []);
         setPendingRequests(pendingRes.data?.requests || []);
         setSentRequests(sentRes.data?.requests || []);
+        setSharedWatchlists(sharedRes.data?.shared_watchlists || []);
       } catch (error) {
         showToast(error?.response?.data?.message || 'Could not load dashboard data', 'error');
       } finally {
@@ -262,6 +336,12 @@ function App() {
 
   const selectedMovie = movieDetail || (filteredMovies[0] ?? null);
 
+  const sortedReviews = useMemo(() => [...reviews].sort((a, b) => {
+    if (reviewSort === 'highest') return Number(b.rating) - Number(a.rating);
+    if (reviewSort === 'lowest') return Number(a.rating) - Number(b.rating);
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  }), [reviews, reviewSort]);
+
   const handleAuthInput = (event) => {
     const { name, value } = event.target;
     setAuthForm((current) => ({ ...current, [name]: value }));
@@ -328,23 +408,28 @@ function App() {
     }
   };
 
-  const updateReview = async (review) => {
-    const nextText = window.prompt('Edit your review:', review.review_text || '');
-    if (nextText === null) return;
+  const beginReviewEdit = (review) => {
+    setEditingReviewId(review.review_id);
+    setEditReviewText(review.review_text || '');
+    setEditReviewRating(Number(review.rating) || 5);
+    setEditHoverRating(0);
+    setDeleteReviewId(null);
+  };
 
-    const nextRating = Number(window.prompt('Update your rating (0-10):', review.rating ?? '5'));
-    if (Number.isNaN(nextRating) || nextRating < 0 || nextRating > 10) {
-      showToast('Rating must be between 0 and 10', 'error');
+  const saveReviewEdit = async () => {
+    if (!editReviewText.trim()) {
+      showToast('Please enter a review before saving', 'error');
       return;
     }
 
     try {
-      await reviewApi.update(review.review_id, {
-        rating: nextRating,
-        review_text: nextText,
+      await reviewApi.update(editingReviewId, {
+        rating: Number(editReviewRating),
+        review_text: editReviewText,
       });
       const refreshed = await reviewApi.listByMovie(movieDetail.movie_id);
       setReviews(refreshed.data?.reviews || []);
+      setEditingReviewId(null);
       showToast('Review updated');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Review update failed', 'error');
@@ -352,15 +437,71 @@ function App() {
   };
 
   const deleteReview = async (reviewId) => {
-    if (!window.confirm('Delete this review?')) return;
-
     try {
       await reviewApi.remove(reviewId);
       const refreshed = await reviewApi.listByMovie(movieDetail.movie_id);
       setReviews(refreshed.data?.reviews || []);
+      setDeleteReviewId(null);
       showToast('Review removed');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Review deletion failed', 'error');
+    }
+  };
+
+  const shareWatchlist = async (watchlistId, friend) => {
+    try {
+      await watchlistApi.share(watchlistId, { shared_with: friend.user_id });
+      setSharePickerId(null);
+      showToast(`Shared with ${friend.name}`);
+      fetchNotifications();
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not share watchlist', 'error');
+    }
+  };
+
+  const toggleSharedWatchlist = async (watchlistId) => {
+    if (expandedSharedId === watchlistId) {
+      setExpandedSharedId(null);
+      return;
+    }
+
+    try {
+      const response = await watchlistApi.getSharedWatchlist(watchlistId);
+      setSharedWatchlistDetails((current) => ({ ...current, [watchlistId]: response.data?.watchlist }));
+      setExpandedSharedId(watchlistId);
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not load shared watchlist', 'error');
+    }
+  };
+
+  const handleNotificationClick = async (notification) => {
+    if (!notification.is_read) {
+      try {
+        await notificationApi.markRead(notification.notification_id);
+        setNotifications((current) => current.map((item) => item.notification_id === notification.notification_id ? { ...item, is_read: true } : item));
+        setUnreadCount((current) => Math.max(0, current - 1));
+      } catch (error) {
+        showToast(error?.response?.data?.message || 'Could not mark notification as read', 'error');
+      }
+    }
+
+    setNotificationsOpen(false);
+    setDashboardTab(notification.notification_type === 'watchlist_share' ? 'Watchlists' : 'Friends');
+    setRoute('/');
+    if (notification.notification_type === 'watchlist_share') {
+      setSharedWatchlistHighlight(true);
+      window.setTimeout(() => sharedWatchlistRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+      window.setTimeout(() => setSharedWatchlistHighlight(false), 1800);
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await notificationApi.markAllRead();
+      setNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
+      setUnreadCount(0);
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not mark notifications as read', 'error');
     }
   };
 
@@ -901,7 +1042,7 @@ function App() {
                     <p className="max-w-2xl text-base leading-7 text-slate-200/80">{selectedMovie.description}</p>
 
                     <div className="flex flex-wrap gap-4">
-                      <button type="button" className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-5 py-3 text-sm font-semibold text-slate-950"><CirclePlay className="h-4 w-4 fill-slate-950" />Quick Watch</button>
+                      <button type="button" onClick={() => setTrailerOpen(true)} disabled={!selectedMovie.trailer_url} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-5 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"><CirclePlay className="h-4 w-4 fill-slate-950" />Quick Watch</button>
                       <button type="button" onClick={() => addMovieToWatchlist(selectedMovie)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/40 px-5 py-3 text-sm font-semibold text-white hover:border-cyan-400/70 hover:text-cyan-200"><Bookmark className="h-4 w-4" />Add to Watchlist</button>
                     </div>
 
@@ -928,7 +1069,13 @@ function App() {
                         { name: 'Crew not available', role: 'Data pending' },
                       ]).map((person, index) => (
                         <div key={`${person.name}-${index}`} className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3">
-                          <div className="h-24 w-full rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20" />
+                          {person.profile_url ? (
+                            <img src={person.profile_url} alt={person.name} className="h-24 w-full rounded-2xl object-cover" />
+                          ) : (
+                            <div className="flex h-24 w-full items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 text-2xl font-bold text-slate-400">
+                              {person.name?.[0]?.toUpperCase() || '?'}
+                            </div>
+                          )}
                           <div className="mt-3"><p className="font-semibold text-white">{person.name}</p><p className="text-sm text-slate-400">{person.role || person.character_name || 'Crew member'}</p></div>
                         </div>
                       ))}
@@ -936,27 +1083,50 @@ function App() {
                   )}
                 </div>
 
+                {(selectedMovie.images || []).length > 0 && (
+                  <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                    <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-white">Gallery</h2><Film className="h-5 w-5 text-cyan-300" /></div>
+                    <div className="mt-4 flex gap-3 overflow-x-auto">
+                      {selectedMovie.images.map((image) => (
+                        <img
+                          key={image.image_id}
+                          src={image.image_url}
+                          alt="Movie scene"
+                          onClick={() => setLightboxImage(image.image_url)}
+                          className="h-32 w-56 rounded-xl object-cover flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
                   <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-white">User Reviews</h2><MessageSquareText className="h-5 w-5 text-cyan-300" /></div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-amber-400/30 bg-amber-500/5 p-4">
+                    <div className="flex items-center gap-4">
+                      <p className="text-5xl font-black text-amber-400">{reviews.length ? (reviews.reduce((sum, review) => sum + Number(review.rating), 0) / reviews.length).toFixed(1) : '0.0'}</p>
+                      <div><div className="flex items-center gap-1 text-amber-400"><Star className="h-5 w-5 fill-amber-400" /><span className="font-semibold">IMDb-style rating</span></div><p className="mt-1 text-sm text-slate-400">{reviews.length} {reviews.length === 1 ? 'rating' : 'ratings'}</p></div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-slate-400"><span>Sort by</span><select value={reviewSort} onChange={(event) => setReviewSort(event.target.value)} className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-2 text-slate-200 outline-none"><option value="recent">Most Recent</option><option value="highest">Highest Rated</option><option value="lowest">Lowest Rated</option></select></div>
+                  </div>
                   <div className="mt-4 space-y-4">
-                    {reviews.length ? reviews.map((review) => (
+                    {sortedReviews.length ? sortedReviews.map((review) => (
                       <div key={review.review_id} className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-white">{review.user_name || review.user || 'Viewer'}</p>
-                            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Verified viewer</p>
+                        {editingReviewId === review.review_id ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-1" onMouseLeave={() => setEditHoverRating(0)}>{Array.from({ length: 10 }, (_, index) => { const rating = index + 1; return <button key={rating} type="button" onMouseEnter={() => setEditHoverRating(rating)} onClick={() => setEditReviewRating(rating)} aria-label={`Set rating to ${rating}`}><Star className={`h-5 w-5 ${rating <= (editHoverRating || editReviewRating) ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} /></button>; })}</div>
+                            <textarea value={editReviewText} onChange={(event) => setEditReviewText(event.target.value)} rows="3" className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/60 p-3 text-sm text-white outline-none focus:border-cyan-400/80" />
+                            <div className="flex gap-2"><button type="button" onClick={saveReviewEdit} className="rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-xs font-semibold text-slate-950">Save</button><button type="button" onClick={() => setEditingReviewId(null)} className="rounded-full border border-slate-700 px-4 py-2 text-xs text-slate-300">Cancel</button></div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-sm font-semibold text-amber-300"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{toDisplayNumber(review.rating)}</span>
-                            {review.user_id === user?.user_id && (
-                              <>
-                                <button type="button" onClick={() => updateReview(review)} className="text-xs text-cyan-300">Edit</button>
-                                <button type="button" onClick={() => deleteReview(review.review_id)} className="text-xs text-rose-300">Delete</button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <p className="mt-3 text-sm leading-6 text-slate-300">{review.review_text || 'No review text provided.'}</p>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-indigo-500 text-sm font-bold text-slate-950">{review.user_name?.[0]?.toUpperCase() || 'V'}</div><div><p className="font-semibold text-white">{review.user_name || review.user || 'Viewer'}</p><p className="text-xs text-slate-400">{timeAgo(review.created_at)}</p></div></div>
+                              <div className="flex items-center gap-2"><span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-sm font-semibold text-amber-300"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{toDisplayNumber(review.rating)}</span>{review.user_id === user?.user_id && <><button type="button" onClick={() => beginReviewEdit(review)} className="text-xs text-cyan-300">Edit</button>{deleteReviewId === review.review_id ? <><button type="button" onClick={() => deleteReview(review.review_id)} className="text-xs font-semibold text-rose-300">Yes</button><button type="button" onClick={() => setDeleteReviewId(null)} className="text-xs text-slate-400">Cancel</button></> : <button type="button" onClick={() => setDeleteReviewId(review.review_id)} className="text-xs text-rose-300">Delete</button>}</>}</div>
+                            </div>
+                            <p className="mt-3 text-sm leading-6 text-slate-300">{review.review_text || 'No review text provided.'}</p>
+                          </>
+                        )}
                       </div>
                     )) : <div className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4 text-slate-300">No reviews yet. Be the first to share feedback.</div>}
                   </div>
@@ -969,8 +1139,21 @@ function App() {
                   <div className="mt-4 space-y-3">
                     {(selectedMovie.streaming || []).length ? selectedMovie.streaming.map((platform) => (
                       <div key={platform.platform_id || platform.name} className="flex items-center justify-between rounded-2xl border border-slate-700/80 bg-slate-900/45 px-3 py-3 text-sm text-slate-200">
-                        <span>{platform.name}</span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-emerald-300"><Check className="h-3.5 w-3.5" />Ready</span>
+                        <div className="flex items-center gap-3">
+                          {platform.logo_url ? (
+                            <img src={platform.logo_url} alt={platform.name} className="h-8 w-8 rounded object-cover" />
+                          ) : (
+                            <div className="h-8 w-8 rounded bg-slate-700 flex items-center justify-center text-xs font-bold">{platform.name?.[0]}</div>
+                          )}
+                          <span>{platform.name}</span>
+                        </div>
+                        {platform.stream_url ? (
+                          <a href={platform.stream_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-full bg-cyan-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-cyan-300 hover:bg-cyan-500/20">
+                            <Check className="h-3.5 w-3.5" />Watch
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-emerald-300"><Check className="h-3.5 w-3.5" />Available</span>
+                        )}
                       </div>
                     )) : <div className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3 text-slate-300">No platform data available yet.</div> }
                   </div>
@@ -981,7 +1164,7 @@ function App() {
                   <form onSubmit={submitReview} className="mt-4 space-y-4">
                     <label className="block">
                       <span className="mb-2 block text-sm text-slate-300">Your rating</span>
-                      <input type="number" min="0" max="10" step="0.1" value={reviewRating} onChange={(event) => setReviewRating(Number(event.target.value))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" />
+                      <div className="flex items-center gap-1" onMouseLeave={() => setHoverRating(0)}>{Array.from({ length: 10 }, (_, index) => { const rating = index + 1; return <button key={rating} type="button" onMouseEnter={() => setHoverRating(rating)} onClick={() => setReviewRating(rating)} aria-label={`Set rating to ${rating}`}><Star className={`h-5 w-5 ${rating <= (hoverRating || reviewRating) ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} /></button>; })}<span className="ml-2 text-sm text-slate-400">{reviewRating}/10</span></div>
                     </label>
                     <textarea value={reviewText} onChange={(event) => setReviewText(event.target.value)} placeholder="Share your thoughts on this movie..." rows="4" className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3 text-sm text-white placeholder:text-slate-400 focus:border-cyan-400/80 focus:outline-none" />
                     <button type="submit" className="w-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 text-sm font-semibold text-slate-950">Submit Review</button>
@@ -995,6 +1178,46 @@ function App() {
                 </div>
               </div>
             </div>
+
+            {/* Trailer Modal */}
+            {trailerOpen && selectedMovie.trailer_url && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setTrailerOpen(false)}>
+                <div className="w-full max-w-3xl rounded-2xl overflow-hidden border border-slate-700 bg-slate-950" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-4">
+                    <h3 className="text-lg font-bold text-white">{selectedMovie.title} — Trailer</h3>
+                    <button type="button" onClick={() => setTrailerOpen(false)} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <div className="aspect-video w-full">
+                    <iframe
+                      src={getYouTubeEmbedUrl(selectedMovie.trailer_url)}
+                      title="Movie trailer"
+                      className="h-full w-full"
+                      allow="autoplay; encrypted-media"
+                      allowFullScreen
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Lightbox Modal */}
+            {lightboxImage && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setLightboxImage(null)}>
+                <div className="w-full max-w-2xl rounded-2xl overflow-hidden border border-slate-700 bg-slate-950" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-4">
+                    <h3 className="text-lg font-bold text-white">Gallery</h3>
+                    <button type="button" onClick={() => setLightboxImage(null)} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <div className="w-full">
+                    <img src={lightboxImage} alt="Gallery image" className="w-full h-auto rounded-xl object-cover" />
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -1047,16 +1270,18 @@ function App() {
             )}
 
             {dashboardTab === 'Watchlists' && (
-              <div className="mt-6 grid gap-5 lg:grid-cols-2">
-                {loading.watchlists ? <div className="skeleton h-48 rounded-[28px]" /> : watchlists.length ? watchlists.map((list) => (
-                  <div key={list.watchlist_id} className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+              <div className="mt-6 space-y-6">
+                <div className="grid gap-5 lg:grid-cols-2">
+                  {loading.watchlists ? <div className="skeleton h-48 rounded-[28px]" /> : watchlists.length ? watchlists.map((list) => (
+                    <div key={list.watchlist_id} className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <h3 className="text-xl font-bold text-white">{list.name}</h3>
                         <p className="text-sm text-slate-400">{list.movie_count || list.movies?.length || 0} titles</p>
                       </div>
-                      <button type="button" className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/80 hover:text-white"><Share2 className="h-4 w-4" />Share</button>
+                      <button type="button" onClick={() => setSharePickerId(sharePickerId === list.watchlist_id ? null : list.watchlist_id)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/80 hover:text-white"><Share2 className="h-4 w-4" />Share</button>
                     </div>
+                    {sharePickerId === list.watchlist_id && <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-slate-950/40 p-3"><p className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Share with a friend</p>{friends.length ? <div className="flex flex-wrap gap-2">{friends.map((friend) => <button key={friend.user_id} type="button" onClick={() => shareWatchlist(list.watchlist_id, friend)} className="rounded-full border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/70 hover:text-white">{friend.name}</button>)}</div> : <p className="text-sm text-slate-400">Add accepted friends before sharing.</p>}</div>}
                     <div className="mt-4 grid grid-cols-3 gap-3">
                       {(list.movies || []).slice(0, 3).map((movie) => (
                         <div key={`${list.watchlist_id}-${movie.movie_id || movie.id}`} className="overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/45">
@@ -1065,8 +1290,19 @@ function App() {
                         </div>
                       ))}
                     </div>
+                    </div>
+                  )) : <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5 text-slate-300">No watchlists yet. Create one from any movie card.</div>}
+                </div>
+
+                <div ref={sharedWatchlistRef} className={`glass-panel rounded-[28px] border p-5 transition ${sharedWatchlistHighlight ? 'border-cyan-400/80 shadow-lg shadow-cyan-500/20' : 'border-slate-800/80'}`}>
+                  <div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Shared with Me</p><h3 className="mt-1 text-xl font-bold text-white">Watchlists from friends</h3></div><Share2 className="h-5 w-5 text-cyan-300" /></div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {sharedWatchlists.length ? sharedWatchlists.map((shared) => {
+                      const detail = sharedWatchlistDetails[shared.watchlist_id];
+                      return <div key={shared.share_id} className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4"><button type="button" onClick={() => toggleSharedWatchlist(shared.watchlist_id)} className="flex w-full items-center justify-between gap-3 text-left"><div><p className="font-semibold text-white">{shared.watchlist_name}</p><p className="text-sm text-slate-400">Shared by {shared.shared_by_name}</p></div><span className="text-xs text-cyan-300">{detail ? 'Hide movies' : 'View movies'}</span></button>{detail && <div className="mt-4 grid grid-cols-3 gap-2">{(detail.movies || []).map((movie) => <div key={`${shared.watchlist_id}-${movie.movie_id}`} className="overflow-hidden rounded-xl border border-slate-700/80"><img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={movie.title} className="h-20 w-full object-cover" /><p className="p-2 text-xs text-slate-200">{movie.title}</p></div>)}</div>}</div>;
+                    }) : <p className="text-sm text-slate-400">No watchlists have been shared with you yet.</p>}
                   </div>
-                )) : <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5 text-slate-300">No watchlists yet. Create one from any movie card.</div>}
+                </div>
               </div>
             )}
 
@@ -1188,7 +1424,16 @@ function App() {
           )}
 
           <div className="ml-auto flex items-center gap-2 md:ml-0">
-            <button type="button" className="rounded-full border border-slate-700/80 bg-slate-900/40 p-2 text-slate-200 transition hover:border-cyan-400/70 hover:text-white"><Bell className="h-4 w-4" /></button>
+            {token && <div ref={notificationMenuRef} className="relative">
+              <button type="button" onClick={() => setNotificationsOpen((current) => !current)} className="relative rounded-full border border-slate-700/80 bg-slate-900/40 p-2 text-slate-200 transition hover:border-cyan-400/70 hover:text-white"><Bell className="h-4 w-4" />{unreadCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}</button>
+              {notificationsOpen && <div className="glass-panel absolute right-0 top-12 z-50 w-80 rounded-2xl border border-slate-800/80 p-3 shadow-2xl sm:w-96">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3"><h3 className="font-semibold text-white">Notifications</h3><button type="button" onClick={markAllNotificationsRead} className="text-xs text-cyan-300 hover:text-cyan-200">Mark all as read</button></div>
+                <div className="mt-2 max-h-80 overflow-y-auto">{notifications.length ? notifications.map((notification) => {
+                  const text = notification.notification_type === 'friend_request' ? `${notification.user_name} sent you a friend request` : notification.notification_type === 'friend_accepted' ? `${notification.user_name} accepted your friend request` : `${notification.user_name} shared "${notification.watchlist_name}" with you`;
+                  return <button key={notification.notification_id} type="button" onClick={() => handleNotificationClick(notification)} className={`block w-full rounded-xl p-3 text-left transition hover:bg-slate-800/60 ${notification.is_read ? 'opacity-55' : 'bg-cyan-500/5'}`}><p className="text-sm text-slate-200">{text}</p><p className="mt-1 text-xs text-slate-500">{timeAgo(notification.created_at)}</p></button>;
+                }) : <p className="p-4 text-center text-sm text-slate-400">You are all caught up.</p>}</div>
+              </div>}
+            </div>}
             {token ? (
               <button type="button" onClick={handleLogout} className="rounded-full border border-cyan-400/60 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20">Logout</button>
             ) : (

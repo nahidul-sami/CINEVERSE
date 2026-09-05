@@ -15,7 +15,7 @@ const { verifyToken, verifyAdmin } = require("../middleware/authMiddleware");
 // Public routes
 router.get("/", getAllGenres);
 router.get("/:id", getGenreById);
-router.get("/:genreId/movies", getMoviesByGenre); // নির্দিষ্ট ಜেনারের সব মুভি দেখার রাউট
+router.get("/:genreId/movies", getMoviesByGenre);
 
 // Admin restricted routes
 router.post("/", verifyToken, verifyAdmin, createGenre);
@@ -23,7 +23,6 @@ router.put("/:id", verifyToken, verifyAdmin, updateGenre);
 router.delete("/:id", verifyToken, verifyAdmin, deleteGenre);
 
 // Movie & Genre Association routes (Admin only)
-router.post("/movies/:movieId", verifyToken, verifyAdmin, addGenreToMovie); // মুভিতে জেনার যুক্ত করার রাউট
-router.delete("/movies/:movieId/:genreId", verifyToken, verifyAdmin, removeGenreFromMovie); // মুভি থেকে জেনার সরানোর রাউট
-
+router.post("/movies/:movieId", verifyToken, verifyAdmin, addGenreToMovie);
+router.delete("/movies/:movieId/:genreId", verifyToken, verifyAdmin, removeGenreFromMovie);
 module.exports = router;

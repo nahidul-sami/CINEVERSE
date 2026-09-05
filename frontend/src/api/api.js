@@ -81,6 +81,9 @@ export const watchlistApi = {
   remove: (watchlistId) => API.delete(`/watchlists/${watchlistId}`),
   addMovie: (watchlistId, payload) => API.post(`/watchlists/${watchlistId}/movies`, payload),
   removeMovie: (watchlistId, movieId) => API.delete(`/watchlists/${watchlistId}/movies/${movieId}`),
+  share: (watchlistId, payload) => API.post(`/watchlists/${watchlistId}/share`, payload),
+  getSharedWithMe: () => API.get('/watchlists/shared-with-me'),
+  getSharedWatchlist: (id) => API.get(`/watchlists/shared/${id}`),
 };
 
 export const friendshipApi = {
@@ -91,6 +94,12 @@ export const friendshipApi = {
   sendRequest: (payload) => API.post('/friendships', payload),
   respond: (friendshipId, payload) => API.put(`/friendships/${friendshipId}`, payload),
   remove: (friendshipId) => API.delete(`/friendships/${friendshipId}`),
+};
+
+export const notificationApi = {
+  getAll: () => API.get('/notifications'),
+  markRead: (id) => API.put(`/notifications/${id}/read`),
+  markAllRead: () => API.put('/notifications/read-all'),
 };
 
 export const personApi = {

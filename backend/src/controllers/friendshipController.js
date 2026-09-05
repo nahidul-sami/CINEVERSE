@@ -34,6 +34,11 @@ exports.sendFriendRequest = async (req, res) => {
             [req.user.user_id, friend_id]
         );
 
+        await pool.query(
+            "INSERT INTO notifications (user_id, notification_type, friendship_id) VALUES ($1, 'friend_request', $2)",
+            [friend_id, result.rows[0].friendship_id]
+        );
+
         res.status(201).json({ message: "Friend request sent successfully", friendship: result.rows[0] });
     } catch (error) {
         console.error("SEND FRIEND REQUEST ERROR:", error);
@@ -69,6 +74,13 @@ exports.respondToFriendRequest = async (req, res) => {
             "UPDATE friendships SET status = $1 WHERE friendship_id = $2 RETURNING *",
             [status, id]
         );
+
+        if (status === 'accepted') {
+            await pool.query(
+                "INSERT INTO notifications (user_id, notification_type, friendship_id) VALUES ($1, 'friend_accepted', $2)",
+                [row.user_id, row.friendship_id]
+            );
+        }
 
         res.status(200).json({ message: "Friend request updated successfully", friendship: result.rows[0] });
     } catch (error) {

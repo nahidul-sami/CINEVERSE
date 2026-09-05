@@ -46,7 +46,7 @@ exports.getMovieById = async (req, res) => {
         );
 
         const cast = await pool.query(
-            `SELECT p.person_id, p.name, mc.character_name, mc.credit_type
+            `SELECT p.person_id, p.name, p.profile_url, mc.character_name, mc.credit_type
              FROM person p
              JOIN movie_cast_crew mc ON p.person_id = mc.person_id
              WHERE mc.movie_id = $1
@@ -63,11 +63,17 @@ exports.getMovieById = async (req, res) => {
             [id]
         );
 
+        const images = await pool.query(
+            `SELECT image_id, image_url, image_type FROM movie_images WHERE movie_id = $1 ORDER BY image_id`,
+            [id]
+        );
+
         res.status(200).json({
             movie: movieResult.rows[0],
             genres: genres.rows,
             cast: cast.rows,
-            streaming: streaming.rows
+            streaming: streaming.rows,
+            images: images.rows
         });
     } catch (error) {
         console.error("GET MOVIE BY ID ERROR:", error);
@@ -84,6 +90,7 @@ exports.createMovie = async (req, res) => {
         language,
         rating,
         poster_url,
+        backdrop_url,
         trailer_url
     } = req.body;
 
@@ -94,8 +101,8 @@ exports.createMovie = async (req, res) => {
     try {
         const newMovie = await pool.query(
             `INSERT INTO movies
-            (title, description, release_year, duration, language, rating, poster_url, trailer_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            (title, description, release_year, duration, language, rating, poster_url, backdrop_url, trailer_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *`,
             [
                 title,
@@ -105,6 +112,7 @@ exports.createMovie = async (req, res) => {
                 language || null,
                 rating || null,
                 poster_url || null,
+                backdrop_url || null,
                 trailer_url || null
             ]
         );
@@ -113,5 +121,38 @@ exports.createMovie = async (req, res) => {
     } catch (error) {
         console.error("ADD MOVIE ERROR:", error);
         res.status(500).json({ message: "Server error while adding movie", error: error.message });
+    }
+};
+
+exports.addMovieImage = async (req, res) => {
+    const { id } = req.params;
+    const { image_url, image_type } = req.body;
+
+    if (!image_url || !image_type) {
+        return res.status(400).json({ message: "image_url and image_type are required" });
+    }
+
+    if (!['gallery', 'backdrop'].includes(image_type)) {
+        return res.status(400).json({ message: "image_type must be 'gallery' or 'backdrop'" });
+    }
+
+    try {
+        // Check if movie exists
+        const movieCheck = await pool.query("SELECT movie_id FROM movies WHERE movie_id = $1", [id]);
+        if (movieCheck.rows.length === 0) {
+            return res.status(404).json({ message: "Movie not found" });
+        }
+
+        const newImage = await pool.query(
+            `INSERT INTO movie_images (movie_id, image_url, image_type)
+             VALUES ($1, $2, $3)
+             RETURNING *`,
+            [id, image_url, image_type]
+        );
+
+        res.status(201).json({ message: "Image added successfully", image: newImage.rows[0] });
+    } catch (error) {
+        console.error("ADD MOVIE IMAGE ERROR:", error);
+        res.status(500).json({ message: "Server error while adding image", error: error.message });
     }
 };
