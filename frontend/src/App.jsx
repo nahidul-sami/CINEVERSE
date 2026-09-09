@@ -111,6 +111,7 @@ function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [headerVisible, setHeaderVisible] = useState(true);
   const [sharePickerId, setSharePickerId] = useState(null);
   const [expandedSharedId, setExpandedSharedId] = useState(null);
   const [sharedWatchlistDetails, setSharedWatchlistDetails] = useState({});
@@ -126,10 +127,11 @@ function App() {
   const [people, setPeople] = useState([]);
   const [creditSubmitting, setCreditSubmitting] = useState(false);
   const [trailerOpen, setTrailerOpen] = useState(false);
-  const [lightboxImage, setLightboxImage] = useState(null);
+  const [galleryIndex, setGalleryIndex] = useState(null);
   const toastTimer = useRef(null);
   const notificationMenuRef = useRef(null);
   const sharedWatchlistRef = useRef(null);
+  const lastScrollY = useRef(0);
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
@@ -182,6 +184,29 @@ function App() {
       window.location.hash = route;
     }
   }, [route]);
+
+  useEffect(() => {
+    if (route.startsWith('/movie/')) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [route]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const scrollingDown = currentScrollY > lastScrollY.current;
+      const pastThreshold = currentScrollY > 80;
+
+      setHeaderVisible(!scrollingDown || !pastThreshold);
+      if (scrollingDown && pastThreshold) {
+        setNotificationsOpen(false);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -298,7 +323,10 @@ function App() {
       setLoading((prev) => ({ ...prev, detail: true }));
       try {
         const detailResponse = await movieApi.getById(movieId);
-        const movie = detailResponse.data?.movie || detailResponse.data || null;
+        const payload = detailResponse.data || {};
+        const movie = payload.movie
+          ? { ...payload.movie, genres: payload.genres || [], cast: payload.cast || [], streaming: payload.streaming || [], images: payload.images || [] }
+          : null;
         setMovieDetail(movie);
 
         const reviewResponse = await reviewApi.listByMovie(movieId);
@@ -378,6 +406,11 @@ function App() {
   const handleMovieOpen = (movieId) => {
     setRoute(`/movie/${movieId}`);
   };
+
+  const openGallery = (index) => setGalleryIndex(index);
+  const closeGallery = () => setGalleryIndex(null);
+  const nextGalleryImage = () => setGalleryIndex((index) => (index + 1) % selectedMovie.images.length);
+  const prevGalleryImage = () => setGalleryIndex((index) => (index - 1 + selectedMovie.images.length) % selectedMovie.images.length);
 
   const submitReview = async (event) => {
     event.preventDefault();
@@ -741,6 +774,7 @@ function App() {
     if (!token) {
       return (
         <Landing
+          movies={movies}
           onLoginClick={() => { setAuthMode('login'); window.location.hash = '/login'; setRoute('/login'); }}
           onRegisterClick={() => { setAuthMode('register'); window.location.hash = '/register'; setRoute('/register'); }}
         />
@@ -876,7 +910,9 @@ function App() {
 
     return (
       <>
-        <section className="relative mt-8 overflow-hidden rounded-[32px] border border-slate-800/80 bg-slate-950 shadow-[0_40px_100px_rgba(8,15,30,0.8)]">
+        {!route.startsWith('/movie/') && (
+          <>
+            <section className="relative mt-8 overflow-hidden rounded-[32px] border border-slate-800/80 bg-slate-950 shadow-[0_40px_100px_rgba(8,15,30,0.8)]">
           {featuredMovie ? (
             <>
               <div
@@ -995,13 +1031,14 @@ function App() {
                       <h3 className="text-lg font-semibold text-white">{movie.title}</h3>
                       <span className="rounded-full border border-slate-700/80 bg-slate-800/80 px-2 py-1 text-xs text-cyan-200">{toDisplayNumber(movie.rating)}</span>
                     </div>
-                    <p className="text-sm leading-6 text-slate-400">{movie.description}</p>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </section>
+            </section>
+          </>
+        )}
 
         {route.startsWith('/movie/') && selectedMovie && (
           <section className="mt-8">
@@ -1014,12 +1051,38 @@ function App() {
               <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `linear-gradient(90deg, rgba(9,13,22,0.9) 0%, rgba(9,13,22,0.78) 32%, rgba(9,13,22,0.72) 100%), url('${selectedMovie.backdrop_url || selectedMovie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'}')` }} />
 
               <div className="relative p-4 sm:p-6 lg:p-8">
-                <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+                <div className="grid gap-4 lg:grid-cols-[260px_1fr_180px]">
                   <div className="glass-panel rounded-[28px] border border-slate-700/80 p-3">
                     <img src={selectedMovie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={selectedMovie.title} className="aspect-[3/4] w-full rounded-[22px] object-cover" />
                   </div>
 
-                  <div className="space-y-5">
+                  <div className="group relative aspect-video cursor-pointer overflow-hidden rounded-[22px] border border-slate-700/80 bg-slate-900" onClick={() => selectedMovie.trailer_url && setTrailerOpen(true)}>
+                    <img src={selectedMovie.backdrop_url || selectedMovie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={`${selectedMovie.title} preview`} className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-black/30 transition group-hover:bg-black/40" />
+                    {selectedMovie.trailer_url && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 transition group-hover:scale-110">
+                          <CirclePlay className="h-8 w-8 fill-slate-950 text-slate-950" />
+                        </div>
+                      </div>
+                    )}
+                    {!selectedMovie.trailer_url && (
+                      <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-300">No trailer available</div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <button type="button" onClick={() => selectedMovie.trailer_url && setTrailerOpen(true)} disabled={!selectedMovie.trailer_url} className="flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl border border-slate-700/80 bg-slate-900/60 p-4 text-slate-200 transition hover:border-cyan-400/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+                      <CirclePlay className="h-6 w-6" />
+                      <span className="text-xs font-semibold uppercase tracking-wide">{selectedMovie.trailer_url ? '1 Video' : 'No Video'}</span>
+                    </button>
+                    <button type="button" onClick={() => (selectedMovie.images || []).length > 0 && openGallery(0)} disabled={!(selectedMovie.images || []).length} className="flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl border border-slate-700/80 bg-slate-900/60 p-4 text-slate-200 transition hover:border-cyan-400/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+                      <Film className="h-6 w-6" />
+                      <span className="text-xs font-semibold uppercase tracking-wide">{(selectedMovie.images || []).length ? `${selectedMovie.images.length} Photos` : 'No Photos'}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-5 lg:col-span-3">
                     <div className="flex flex-wrap items-center gap-2">
                       {genres.slice(0, 3).map((genre) => (
                         <span key={genre.genre_id} className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-cyan-200">{genre.name}</span>
@@ -1070,9 +1133,9 @@ function App() {
                       ]).map((person, index) => (
                         <div key={`${person.name}-${index}`} className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3">
                           {person.profile_url ? (
-                            <img src={person.profile_url} alt={person.name} className="h-24 w-full rounded-2xl object-cover" />
+                            <img src={person.profile_url} alt={person.name} className="aspect-[2/3] w-full rounded-2xl object-cover" />
                           ) : (
-                            <div className="flex h-24 w-full items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 text-2xl font-bold text-slate-400">
+                            <div className="flex aspect-[2/3] w-full items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 text-2xl font-bold text-slate-400">
                               {person.name?.[0]?.toUpperCase() || '?'}
                             </div>
                           )}
@@ -1082,23 +1145,6 @@ function App() {
                     </div>
                   )}
                 </div>
-
-                {(selectedMovie.images || []).length > 0 && (
-                  <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
-                    <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-white">Gallery</h2><Film className="h-5 w-5 text-cyan-300" /></div>
-                    <div className="mt-4 flex gap-3 overflow-x-auto">
-                      {selectedMovie.images.map((image) => (
-                        <img
-                          key={image.image_id}
-                          src={image.image_url}
-                          alt="Movie scene"
-                          onClick={() => setLightboxImage(image.image_url)}
-                          className="h-32 w-56 rounded-xl object-cover flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
                   <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-white">User Reviews</h2><MessageSquareText className="h-5 w-5 text-cyan-300" /></div>
@@ -1202,18 +1248,21 @@ function App() {
               </div>
             )}
 
-            {/* Lightbox Modal */}
-            {lightboxImage && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setLightboxImage(null)}>
-                <div className="w-full max-w-2xl rounded-2xl overflow-hidden border border-slate-700 bg-slate-950" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between p-4">
-                    <h3 className="text-lg font-bold text-white">Gallery</h3>
-                    <button type="button" onClick={() => setLightboxImage(null)} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white">
-                      <X className="h-5 w-5" />
-                    </button>
+            {galleryIndex !== null && selectedMovie.images?.[galleryIndex] && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-sm" onClick={closeGallery}>
+                <div className="relative w-full max-w-4xl" onClick={(event) => event.stopPropagation()}>
+                  <div className="flex items-center justify-between p-2">
+                    <span className="text-sm text-slate-300">{galleryIndex + 1} / {selectedMovie.images.length}</span>
+                    <button type="button" onClick={closeGallery} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
                   </div>
-                  <div className="w-full">
-                    <img src={lightboxImage} alt="Gallery image" className="w-full h-auto rounded-xl object-cover" />
+                  <div className="relative">
+                    <img src={selectedMovie.images[galleryIndex].image_url} alt="Gallery" className="max-h-[75vh] w-full rounded-xl object-contain" />
+                    {selectedMovie.images.length > 1 && (
+                      <>
+                        <button type="button" onClick={prevGalleryImage} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-950/70 p-2 text-white hover:bg-slate-950"><ArrowLeft className="h-5 w-5" /></button>
+                        <button type="button" onClick={nextGalleryImage} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-950/70 p-2 text-white hover:bg-slate-950 rotate-180"><ArrowLeft className="h-5 w-5" /></button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1224,18 +1273,7 @@ function App() {
         {!route.startsWith('/movie/') && route !== '/login' && route !== '/register' && route !== '/admin' && (
           <section className="mt-8">
             <div className="glass-panel rounded-[28px] border border-slate-800/80 p-4">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-indigo-500 text-slate-950"><UserRound className="h-6 w-6" /></div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Signed in</p>
-                    <h2 className="text-xl font-bold text-white">{user?.name || 'Guest User'}</h2>
-                  </div>
-                </div>
-                <button type="button" onClick={handleLogout} className="rounded-full border border-slate-700/80 bg-slate-900/50 px-4 py-2 text-sm text-slate-200 hover:border-cyan-400/80 hover:text-white">Log out</button>
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 md:hidden">
                 {dashboardTabs.map((tab) => (
                   <button key={tab} type="button" onClick={() => setDashboardTab(tab)} className={`rounded-full px-4 py-2 text-sm font-medium ${dashboardTab === tab ? 'bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950' : 'border border-slate-700/80 bg-slate-900/50 text-slate-300 hover:border-cyan-400/70 hover:text-white'}`}>
                     {tab}
@@ -1381,7 +1419,7 @@ function App() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.16),transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(99,102,241,0.18),transparent_25%)]" />
 
       <div className="relative mx-auto max-w-7xl px-4 pb-20 pt-6 sm:px-6 lg:px-8">
-        <header className="glass-panel sticky top-4 z-30 flex items-center gap-3 rounded-2xl border border-slate-800/80 px-3 py-3 sm:px-4">
+        <header className={`app-header sticky top-4 z-30 flex items-center gap-3 rounded-2xl border border-slate-800/80 px-3 py-3 sm:px-4 transition-transform duration-300 ${headerVisible ? 'translate-y-0' : '-translate-y-[calc(100%+2rem)]'}`}>
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500 text-slate-950 shadow-lg shadow-cyan-500/20"><Film className="h-5 w-5" /></div>
             <p className="text-lg font-semibold tracking-tight text-white">Cineverse</p>
@@ -1410,7 +1448,7 @@ function App() {
             <nav className="hidden items-center gap-6 text-sm text-slate-300 xl:flex">
               <button type="button" onClick={() => { window.location.hash = '/'; setRoute('/'); }} className="transition hover:text-white">Home</button>
               <button type="button" onClick={() => { if (user?.role === 'admin') { window.location.hash = '/admin'; setRoute('/admin'); } else { window.location.hash = '/'; setRoute('/'); } }} className="transition hover:text-white">Dashboard</button>
-              <button type="button" className="transition hover:text-white">Trending</button>
+              <button type="button" onClick={() => { setSortBy('rating'); window.location.hash = '/'; setRoute('/'); }} className="transition hover:text-white">Trending</button>
             </nav>
           )}
 

@@ -15,7 +15,7 @@ const { verifyToken, verifyAdmin } = require("../middleware/authMiddleware");
 // Public routes
 router.get("/", getAllGenres);
 router.get("/:id", getGenreById);
-router.get("/:genreId/movies", getMoviesByGenre); // নির্দিষ্ট ಜেনারের সব মুভি দেখার রাউট
+router.get("/:genreId/movies", getMoviesByGenre); 
 
 // Admin restricted routes
 router.post("/", verifyToken, verifyAdmin, createGenre);
