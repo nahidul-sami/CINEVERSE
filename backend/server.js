@@ -3,7 +3,8 @@ const cors = require("cors");
 require("dotenv").config();
 
 const authRoutes = require("./src/routes/authRoutes");
-const movieRoutes = require("./src/routes/movieRoutes.js");
+const userRoutes = require("./src/routes/userRoutes");
+const movieRoutes = require("./src/routes/movieRoutes");
 const watchlistRoutes = require("./src/routes/watchlistRoutes");
 const watchHistoryRoutes = require("./src/routes/watchHistoryRoutes");
 const reviewRoutes = require("./src/routes/reviewRoutes");
@@ -32,6 +33,7 @@ app.get("/db-test", async (req, res) => {
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/movies", movieRoutes);
 app.use("/api/persons", personRoutes);
 app.use("/api/reviews", reviewRoutes);

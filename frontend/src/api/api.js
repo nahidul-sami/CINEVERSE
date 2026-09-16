@@ -43,6 +43,21 @@ export const authApi = {
   updateProfile: (payload) => API.put('/auth/profile', payload),
 };
 
+export const userApi = {
+  getProfile: () => API.get('/users/profile'),
+  updateProfile: (payload) => API.put('/users/profile', payload),
+  search: (params = {}) => API.get('/users/search', { params }),
+  getById: (userId) => API.get(`/users/${userId}`),
+  uploadProfilePicture: (file) => {
+    const formData = new FormData();
+    formData.append('profile_image', file);
+    return API.post('/users/profile-picture', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  removeProfilePicture: () => API.delete('/users/profile-picture'),
+};
+
 export const movieApi = {
   getAll: (params = {}) => API.get('/movies', { params }),
   search: (params = {}) => API.get('/movies/search', { params }),

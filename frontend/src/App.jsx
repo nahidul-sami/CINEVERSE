@@ -31,6 +31,7 @@ import {
   authApi,
   genreApi,
   movieApi,
+  userApi,
   reviewApi,
   personApi,
   watchHistoryApi,
@@ -40,6 +41,10 @@ import {
   streamingPlatformApi,
 } from './api/api';
 import Landing from './components/Landing';
+import ProfilePage from './pages/ProfilePage';
+import EditProfilePage from './pages/EditProfilePage';
+import PublicProfilePage from './pages/PublicProfilePage';
+import SearchPage from './pages/SearchPage';
 
 const dashboardTabs = ['Profile', 'History', 'Friends'];
 const adminTabs = ['Manage Movies', 'Manage Genres', 'Streaming Platforms', 'Cast & Crew Assignment'];
@@ -130,6 +135,7 @@ function App() {
   const [platformForm, setPlatformForm] = useState({ name: '', logo_url: '', country: '', url: '', subscription_type: '' });
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
   const [movieSearch, setMovieSearch] = useState('');
+  const [profileData, setProfileData] = useState(null);
   const [movieModalOpen, setMovieModalOpen] = useState(false);
   const [editingMovieId, setEditingMovieId] = useState(null);
   const [movieSubmitting, setMovieSubmitting] = useState(false);
@@ -221,7 +227,28 @@ function App() {
     if (route === '/history') setDashboardTab('History');
     if (route === '/friends') setDashboardTab('Friends');
     if (route === '/') setDashboardTab('Profile');
+    if (route === '/profile') setDashboardTab('Profile');
+    if (route === '/profile/edit') setDashboardTab('Profile');
+    if (route === '/search') setActiveNav('Search');
+    if (route.startsWith('/users/')) setActiveNav('Profile');
   }, [route]);
+
+  useEffect(() => {
+    if (!token || route !== '/profile') return undefined;
+
+    let ignore = false;
+    userApi.getProfile()
+      .then(({ data }) => {
+        if (!ignore) setProfileData(data || null);
+      })
+      .catch(() => {
+        if (!ignore) setProfileData(null);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [token, route]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(searchTerm), 150);
@@ -1015,6 +1042,63 @@ function App() {
     setActiveNav('Watchlist');
     window.location.hash = '/watchlists';
     setRoute('/watchlists');
+  };
+
+  const goToProfile = () => {
+    setActiveNav('Profile');
+    setDashboardTab('Profile');
+    window.location.hash = '/profile';
+    setRoute('/profile');
+  };
+
+  const goToSearch = () => {
+    setActiveNav('Search');
+    window.location.hash = '/search';
+    setRoute('/search');
+  };
+
+  const goToUserProfile = (targetUserId) => {
+    if (!targetUserId) return;
+    setActiveNav('Profile');
+    window.location.hash = `/users/${targetUserId}`;
+    setRoute(`/users/${targetUserId}`);
+  };
+
+  const handleProfileSaved = (updatedUser) => {
+    const nextUser = updatedUser || user;
+    if (nextUser) {
+      setUser(nextUser);
+      localStorage.setItem('cineverse_user', JSON.stringify(nextUser));
+      setProfileName(nextUser.name || '');
+    }
+    setProfileData((current) => ({ ...(current || {}), user: nextUser }));
+    setRoute('/profile');
+    window.location.hash = '/profile';
+  };
+
+  const handleFriendAction = async (targetUserId, action) => {
+    try {
+      if (action === 'send') {
+        await friendshipApi.sendRequest({ friend_id: targetUserId });
+        showToast('Friend request sent');
+      }
+
+      if (action === 'accept') {
+        await friendshipApi.respond(targetUserId, { status: 'accepted' });
+        showToast('Friend request accepted');
+      }
+
+      const [friendsRes, pendingRes, sentRes] = await Promise.all([
+        friendshipApi.getFriends(),
+        friendshipApi.getPending(),
+        friendshipApi.getSent(),
+      ]);
+      setFriends(friendsRes.data?.friends || []);
+      setPendingRequests(pendingRes.data?.requests || []);
+      setSentRequests(sentRes.data?.requests || []);
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Friend action failed', 'error');
+    }
   };
 
   const goToDashboardTab = (tab) => {
