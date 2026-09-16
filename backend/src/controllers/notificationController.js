@@ -64,3 +64,17 @@ exports.markAllAsRead = async (req, res) => {
         res.status(500).json({ message: "Server error while marking notifications as read", error: error.message });
     }
 };
+
+exports.deleteNotification = async (req, res) => {
+    try {
+        const result = await pool.query(
+            "DELETE FROM notifications WHERE notification_id = $1 AND user_id = $2 RETURNING notification_id",
+            [req.params.id, req.user.user_id]
+        );
+        if (!result.rows.length) return res.status(404).json({ message: "Notification not found" });
+        res.status(200).json({ message: "Notification deleted successfully" });
+    } catch (error) {
+        console.error("DELETE NOTIFICATION ERROR:", error);
+        res.status(500).json({ message: "Unable to delete notification" });
+    }
+};

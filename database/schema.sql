@@ -55,6 +55,7 @@ CREATE TABLE movies (
     language VARCHAR(100),
     trailer_url TEXT,
     poster_url TEXT,
+    backdrop_url TEXT,
     description TEXT,
     average_rating DECIMAL(3,2),
     duration INT

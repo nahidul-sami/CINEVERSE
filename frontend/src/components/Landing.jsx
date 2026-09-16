@@ -54,17 +54,6 @@ function Landing({ movies = [], onLoginClick, onRegisterClick }) {
           </div>
         </div>
       )}
-      <nav className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-4 text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)] sm:px-6">
-        <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-          <Film className="h-5 w-5 text-cyan-300" />
-          Cineverse
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={onLoginClick} className="px-4 py-2 text-sm font-medium transition hover:text-cyan-200">Login</button>
-          <button type="button" onClick={onRegisterClick} className="px-4 py-2 text-sm font-semibold transition hover:text-cyan-200">Sign up</button>
-        </div>
-      </nav>
-
       <section className="relative z-10 mx-auto flex min-h-[calc(100vh-12rem)] max-w-5xl flex-col justify-center px-4 text-center drop-shadow-[0_4px_10px_rgba(0,0,0,0.95)] sm:px-6">
         <div className="mx-auto flex h-20 w-20 items-center justify-center text-cyan-200">
           <Film className="h-10 w-10" />

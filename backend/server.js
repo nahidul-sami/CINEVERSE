@@ -3,7 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const authRoutes = require("./src/routes/authRoutes");
-const movieRoutes = require("./src/routes/movieRoutes");
+const movieRoutes = require("./src/routes/movieRoutes.js");
 const watchlistRoutes = require("./src/routes/watchlistRoutes");
 const watchHistoryRoutes = require("./src/routes/watchHistoryRoutes");
 const reviewRoutes = require("./src/routes/reviewRoutes");
@@ -11,6 +11,7 @@ const personRoutes = require("./src/routes/personRoutes");
 const genreRoutes = require("./src/routes/genreRoutes");
 const friendshipRoutes = require("./src/routes/friendshipRoutes");
 const notificationRoutes = require("./src/routes/notificationRoutes");
+const streamingPlatformRoutes = require("./src/routes/streamingPlatformRoutes");
 
 
 const app = express();
@@ -18,6 +19,16 @@ const app = express();
 // Middlewares
 app.use(cors());
 app.use(express.json());
+
+app.get("/db-test", async (req, res) => {
+    try {
+        const result = await require("./src/config/db").query("SELECT current_database() AS database_name");
+        res.status(200).json({ database_name: result.rows[0].database_name });
+    } catch (error) {
+        console.error("DB TEST ERROR:", error);
+        res.status(500).json({ message: "Database connection failed" });
+    }
+});
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -29,6 +40,7 @@ app.use("/api/watchlists", watchlistRoutes);
 app.use("/api/genres", genreRoutes);
 app.use("/api/friendships", friendshipRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/streaming-platforms", streamingPlatformRoutes);
 
 const PORT = process.env.PORT || 5000;
 

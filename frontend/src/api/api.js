@@ -45,8 +45,13 @@ export const authApi = {
 
 export const movieApi = {
   getAll: (params = {}) => API.get('/movies', { params }),
+  search: (params = {}) => API.get('/movies/search', { params }),
+  recommendations: (params = {}) => API.get('/movies/recommendations', { params }),
   getById: (movieId) => API.get(`/movies/${movieId}`),
   create: (payload) => API.post('/movies', payload),
+  update: (movieId, payload) => API.put(`/movies/${movieId}`, payload),
+  addImage: (movieId, payload) => API.post(`/movies/${movieId}/images`, payload),
+  removeImage: (movieId, imageId) => API.delete(`/movies/${movieId}/images/${imageId}`),
   remove: (movieId) => API.delete(`/movies/${movieId}`),
 };
 
@@ -54,6 +59,7 @@ export const genreApi = {
   getAll: () => API.get('/genres'),
   getById: (genreId) => API.get(`/genres/${genreId}`),
   create: (payload) => API.post('/genres', payload),
+  update: (genreId, payload) => API.put(`/genres/${genreId}`, payload),
   remove: (genreId) => API.delete(`/genres/${genreId}`),
   attachToMovie: (movieId, payload) => API.post(`/genres/movies/${movieId}`, payload),
   removeFromMovie: (movieId, genreId) => API.delete(`/genres/movies/${movieId}/${genreId}`),
@@ -100,10 +106,23 @@ export const notificationApi = {
   getAll: () => API.get('/notifications'),
   markRead: (id) => API.put(`/notifications/${id}/read`),
   markAllRead: () => API.put('/notifications/read-all'),
+  remove: (id) => API.delete(`/notifications/${id}`),
 };
 
 export const personApi = {
   getAll: () => API.get('/persons'),
   create: (payload) => API.post('/persons', payload),
+  update: (personId, payload) => API.put(`/persons/${personId}`, payload),
+  remove: (personId) => API.delete(`/persons/${personId}`),
   addMovieCredit: (movieId, payload) => API.post(`/persons/movies/${movieId}/credits`, payload),
+  removeMovieCredit: (movieId, personId, creditType) => API.delete(`/persons/movies/${movieId}/credits/${personId}/${encodeURIComponent(creditType)}`),
+};
+
+export const streamingPlatformApi = {
+  getAll: () => API.get('/streaming-platforms'),
+  create: (payload) => API.post('/streaming-platforms', payload),
+  update: (platformId, payload) => API.put(`/streaming-platforms/${platformId}`, payload),
+  remove: (platformId) => API.delete(`/streaming-platforms/${platformId}`),
+  attachToMovie: (movieId, payload) => API.post(`/streaming-platforms/movies/${movieId}`, payload),
+  removeFromMovie: (movieId, platformId) => API.delete(`/streaming-platforms/movies/${movieId}/${platformId}`),
 };

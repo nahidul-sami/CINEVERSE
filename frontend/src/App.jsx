@@ -10,6 +10,7 @@ import {
   Film,
   Flame,
   LoaderCircle,
+  Menu,
   MessageSquareText,
   MonitorPlay,
   Play,
@@ -36,11 +37,12 @@ import {
   watchlistApi,
   friendshipApi,
   notificationApi,
+  streamingPlatformApi,
 } from './api/api';
 import Landing from './components/Landing';
 
-const dashboardTabs = ['Profile', 'Watchlists', 'History', 'Friends'];
-const adminTabs = ['Manage Movies', 'Manage Genres', 'Cast & Crew Assignment'];
+const dashboardTabs = ['Profile', 'History', 'Friends'];
+const adminTabs = ['Manage Movies', 'Manage Genres', 'Streaming Platforms', 'Cast & Crew Assignment'];
 
 const getHashRoute = () => {
   const path = window.location.hash.replace(/^#/, '') || '/';
@@ -80,18 +82,23 @@ function App() {
   const [route, setRoute] = useState(() => getHashRoute());
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [profileName, setProfileName] = useState('');
   const [movies, setMovies] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
   const [genres, setGenres] = useState([]);
   const [movieDetail, setMovieDetail] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [watchHistory, setWatchHistory] = useState([]);
   const [watchlists, setWatchlists] = useState([]);
   const [sharedWatchlists, setSharedWatchlists] = useState([]);
+  const [platforms, setPlatforms] = useState([]);
   const [friends, setFriends] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [selectedGenreId, setSelectedGenreId] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy] = useState('rating');
   const [reviewText, setReviewText] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
@@ -104,6 +111,7 @@ function App() {
   const [reviewSort, setReviewSort] = useState('recent');
   const [watchProgress, setWatchProgress] = useState(0);
   const [dashboardTab, setDashboardTab] = useState('Profile');
+  const [activeNav, setActiveNav] = useState('Home');
   const [adminTab, setAdminTab] = useState('Manage Movies');
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState({ movies: false, detail: false, profile: false, history: false, watchlists: false, friends: false, page: true });
@@ -113,14 +121,17 @@ function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [headerVisible, setHeaderVisible] = useState(true);
   const [sharePickerId, setSharePickerId] = useState(null);
-  const [expandedSharedId, setExpandedSharedId] = useState(null);
-  const [sharedWatchlistDetails, setSharedWatchlistDetails] = useState({});
-  const [sharedWatchlistHighlight, setSharedWatchlistHighlight] = useState(false);
+  const [selectedWatchlist, setSelectedWatchlist] = useState(null);
+  const [watchlistDetailLoading, setWatchlistDetailLoading] = useState(false);
+  const [addingMovieId, setAddingMovieId] = useState(null);
   const [movieForm, setMovieForm] = useState({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', trailer_url: '' });
   const [genreForm, setGenreForm] = useState({ name: '', description: '' });
+  const [personForm, setPersonForm] = useState({ name: '', birth_date: '', biography: '', profile_url: '', person_type: 'actor' });
+  const [platformForm, setPlatformForm] = useState({ name: '', logo_url: '', country: '', url: '', subscription_type: '' });
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
   const [movieSearch, setMovieSearch] = useState('');
   const [movieModalOpen, setMovieModalOpen] = useState(false);
+  const [editingMovieId, setEditingMovieId] = useState(null);
   const [movieSubmitting, setMovieSubmitting] = useState(false);
   const [deleteMovieId, setDeleteMovieId] = useState(null);
   const [assignMovie, setAssignMovie] = useState(null);
@@ -128,9 +139,12 @@ function App() {
   const [creditSubmitting, setCreditSubmitting] = useState(false);
   const [trailerOpen, setTrailerOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [imageUrl, setImageUrl] = useState('');
   const toastTimer = useRef(null);
   const notificationMenuRef = useRef(null);
-  const sharedWatchlistRef = useRef(null);
+  const searchMenuRef = useRef(null);
+  const dashboardSectionRef = useRef(null);
   const lastScrollY = useRef(0);
 
   const showToast = useCallback((message, type = 'success') => {
@@ -162,7 +176,6 @@ function App() {
     setUser(null);
     setWatchHistory([]);
     setWatchlists([]);
-    setSharedWatchlists([]);
     setFriends([]);
     setPendingRequests([]);
     setSentRequests([]);
@@ -180,16 +193,40 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const handleSearchOutside = (event) => {
+      if (searchMenuRef.current && !searchMenuRef.current.contains(event.target)) setSearchOpen(false);
+    };
+    const handleSearchEscape = (event) => {
+      if (event.key === 'Escape') setSearchOpen(false);
+    };
+    document.addEventListener('mousedown', handleSearchOutside);
+    document.addEventListener('keydown', handleSearchEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleSearchOutside);
+      document.removeEventListener('keydown', handleSearchEscape);
+    };
+  }, []);
+
+  useEffect(() => {
     if (getHashRoute() !== route) {
       window.location.hash = route;
     }
   }, [route]);
 
   useEffect(() => {
+    setSearchOpen(false);
     if (route.startsWith('/movie/')) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+    if (route === '/history') setDashboardTab('History');
+    if (route === '/friends') setDashboardTab('Friends');
+    if (route === '/') setDashboardTab('Profile');
   }, [route]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(searchTerm), 150);
+    return () => window.clearTimeout(timeout);
+  }, [searchTerm]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -214,6 +251,7 @@ function App() {
         .then(({ data }) => {
           const profileUser = data?.user || data;
           setUser(profileUser);
+          setProfileName(profileUser.name || '');
           localStorage.setItem('cineverse_user', JSON.stringify(profileUser));
         })
         .catch((error) => {
@@ -284,6 +322,18 @@ function App() {
   }, [token, showToast]);
 
   useEffect(() => {
+    if (!token) {
+      setRecommendations([]);
+      return undefined;
+    }
+
+    movieApi.recommendations({ limit: 8 })
+      .then((response) => setRecommendations(response.data?.recommendations || []))
+      .catch(() => setRecommendations([]));
+    return undefined;
+  }, [token]);
+
+  useEffect(() => {
     const loadGenres = async () => {
       try {
         const response = await genreApi.getAll();
@@ -298,8 +348,12 @@ function App() {
       try {
         const params = {};
         if (selectedGenreId !== 'all') params.genre_id = selectedGenreId;
-        const response = await movieApi.getAll(params);
-        setMovies(response.data || []);
+        if (debouncedSearch.trim()) params.q = debouncedSearch.trim();
+        params.limit = 100;
+        const response = debouncedSearch.trim()
+          ? await movieApi.search({ q: debouncedSearch.trim(), page: 1, limit: 100 })
+          : await movieApi.getAll(params);
+        setMovies(debouncedSearch.trim() ? (response.data?.results || []) : (response.data || []));
       } catch (error) {
         showToast(error?.response?.data?.message || 'Failed to load movies', 'error');
         setMovies([]);
@@ -310,7 +364,7 @@ function App() {
 
     loadGenres();
     loadMovies();
-  }, [selectedGenreId, showToast]);
+  }, [selectedGenreId, debouncedSearch, showToast]);
 
   useEffect(() => {
     const slug = route.match(/^\/movie\/(\d+)$/);
@@ -343,22 +397,33 @@ function App() {
     fetchMovieDetails();
   }, [route, showToast]);
 
+  useEffect(() => {
+    if (!route.startsWith('/movie/')) return;
+    const movieId = Number(route.match(/^\/movie\/(\d+)$/)?.[1]);
+    const historyItem = watchHistory.find((item) => Number(item.movie_id) === movieId);
+    if (historyItem) setWatchProgress(Number(historyItem.progress) || 0);
+  }, [route, watchHistory]);
+
   const filteredMovies = useMemo(() => {
-    const search = searchTerm.trim().toLowerCase();
+    const search = debouncedSearch.trim().toLowerCase();
     const list = [...movies];
 
     return list
       .filter((movie) => {
-        const matchesGenre = selectedGenreId === 'all' || (movie.genre_id && Number(movie.genre_id) === Number(selectedGenreId));
         const haystack = `${movie.title || ''} ${movie.description || ''}`.toLowerCase();
-        return matchesGenre && (!search || haystack.includes(search));
+        return !search || haystack.includes(search);
       })
       .sort((a, b) => {
         if (sortBy === 'year') return Number(b.release_year || 0) - Number(a.release_year || 0);
         if (sortBy === 'name') return (a.title || '').localeCompare(b.title || '');
         return Number(b.rating || 0) - Number(a.rating || 0);
       });
-  }, [movies, searchTerm, selectedGenreId, sortBy]);
+  }, [movies, debouncedSearch, sortBy]);
+
+  const searchSuggestions = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    return filteredMovies.slice(0, 6);
+  }, [filteredMovies, searchTerm]);
 
   const featuredMovie = filteredMovies[0] || movieDetail || movies[0] || null;
 
@@ -492,21 +557,6 @@ function App() {
     }
   };
 
-  const toggleSharedWatchlist = async (watchlistId) => {
-    if (expandedSharedId === watchlistId) {
-      setExpandedSharedId(null);
-      return;
-    }
-
-    try {
-      const response = await watchlistApi.getSharedWatchlist(watchlistId);
-      setSharedWatchlistDetails((current) => ({ ...current, [watchlistId]: response.data?.watchlist }));
-      setExpandedSharedId(watchlistId);
-    } catch (error) {
-      showToast(error?.response?.data?.message || 'Could not load shared watchlist', 'error');
-    }
-  };
-
   const handleNotificationClick = async (notification) => {
     if (!notification.is_read) {
       try {
@@ -519,13 +569,15 @@ function App() {
     }
 
     setNotificationsOpen(false);
-    setDashboardTab(notification.notification_type === 'watchlist_share' ? 'Watchlists' : 'Friends');
-    setRoute('/');
     if (notification.notification_type === 'watchlist_share') {
-      setSharedWatchlistHighlight(true);
-      window.setTimeout(() => sharedWatchlistRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
-      window.setTimeout(() => setSharedWatchlistHighlight(false), 1800);
+      setActiveNav('Watchlist');
+      window.location.hash = '/watchlists';
+      setRoute('/watchlists');
+      return;
     }
+
+    setDashboardTab('Friends');
+    setRoute('/');
   };
 
   const markAllNotificationsRead = async () => {
@@ -559,26 +611,196 @@ function App() {
     }
   };
 
+  const markAsWatched = async () => {
+    if (!token || !movieDetail) {
+      showToast('Sign in to mark movies as watched', 'error');
+      return;
+    }
+    try {
+      await watchHistoryApi.add({ movie_id: movieDetail.movie_id, progress: 100 });
+      const response = await watchHistoryApi.getAll();
+      setWatchHistory(response.data?.history || []);
+      setWatchProgress(100);
+      showToast('Marked as watched');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Unable to mark movie as watched', 'error');
+    }
+  };
+
+  const deleteNotification = async (notificationId) => {
+    try {
+      await notificationApi.remove(notificationId);
+      setNotifications((current) => current.filter((item) => item.notification_id !== notificationId));
+      showToast('Notification deleted');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not delete notification', 'error');
+    }
+  };
+
   const addMovieToWatchlist = async (movie) => {
     if (!token) {
       showToast('Sign in to use watchlists', 'error');
       return;
     }
 
+    const movieId = movie.movie_id || movie.id || movie.movieId;
+    setAddingMovieId(movieId);
+
     try {
-      let targetList = watchlists[0];
+      const currentWatchlists = await watchlistApi.getAll();
+      let targetList = currentWatchlists.data?.watchlists?.[0];
       if (!targetList) {
         const created = await watchlistApi.create({ name: 'My Watchlist' });
         targetList = created.data?.watchlist;
-        setWatchlists((prev) => [...prev, targetList]);
       }
 
-      await watchlistApi.addMovie(targetList.watchlist_id, { movie_id: movie.movie_id || movie.id || movie.movieId });
+      await watchlistApi.addMovie(targetList.watchlist_id, { movie_id: movieId });
       const refreshed = await watchlistApi.getAll();
       setWatchlists(refreshed.data?.watchlists || []);
       showToast('Added to watchlist');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Could not add movie to watchlist', 'error');
+    } finally {
+      setAddingMovieId(null);
+    }
+  };
+
+  const openWatchlist = async (watchlistId) => {
+    setWatchlistDetailLoading(true);
+    try {
+      const response = await watchlistApi.getById(watchlistId);
+      setSelectedWatchlist(response.data?.watchlist || response.data);
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not load watchlist', 'error');
+    } finally {
+      setWatchlistDetailLoading(false);
+    }
+  };
+
+  const createWatchlist = async () => {
+    const name = window.prompt('Watchlist name');
+    if (!name?.trim()) return;
+
+    try {
+      const response = await watchlistApi.create({ name: name.trim() });
+      const refreshed = await watchlistApi.getAll();
+      setWatchlists(refreshed.data?.watchlists || []);
+      showToast(`Created ${response.data?.watchlist?.name || name.trim()}`);
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not create watchlist', 'error');
+    }
+  };
+
+  const renameWatchlist = async (list) => {
+    const name = window.prompt('Watchlist name', list.name);
+    if (!name?.trim() || name.trim() === list.name) return;
+    try {
+      await watchlistApi.update(list.watchlist_id, { name: name.trim() });
+      const refreshed = await watchlistApi.getAll();
+      setWatchlists(refreshed.data?.watchlists || []);
+      showToast('Watchlist renamed');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not rename watchlist', 'error');
+    }
+  };
+
+  const deleteWatchlist = async (watchlistId) => {
+    if (!window.confirm('Delete this watchlist?')) return;
+    try {
+      await watchlistApi.remove(watchlistId);
+      setWatchlists((current) => current.filter((list) => list.watchlist_id !== watchlistId));
+      showToast('Watchlist deleted');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not delete watchlist', 'error');
+    }
+  };
+
+  const deleteHistoryItem = async (historyId) => {
+    try {
+      await watchHistoryApi.remove(historyId);
+      setWatchHistory((current) => current.filter((item) => item.history_id !== historyId));
+      showToast('History item removed');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not remove history item', 'error');
+    }
+  };
+
+  const loadPlatforms = async () => {
+    try {
+      const response = await streamingPlatformApi.getAll();
+      setPlatforms(response.data?.platforms || []);
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not load platforms', 'error');
+    }
+  };
+
+  const createPlatform = async (event) => {
+    event.preventDefault();
+    try {
+      await streamingPlatformApi.create(platformForm);
+      setPlatformForm({ name: '', logo_url: '', country: '', url: '', subscription_type: '' });
+      await loadPlatforms();
+      showToast('Platform created');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not create platform', 'error');
+    }
+  };
+
+  const deletePlatform = async (platformId) => {
+    if (!window.confirm('Delete this platform?')) return;
+    try {
+      await streamingPlatformApi.remove(platformId);
+      setPlatforms((current) => current.filter((platform) => platform.platform_id !== platformId));
+      showToast('Platform deleted');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not delete platform', 'error');
+    }
+  };
+
+  const editPlatform = async (platform) => {
+    const name = window.prompt('Platform name', platform.name);
+    if (!name?.trim() || name.trim() === platform.name) return;
+    try {
+      await streamingPlatformApi.update(platform.platform_id, { ...platform, name: name.trim() });
+      await loadPlatforms();
+      showToast('Platform updated');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not update platform', 'error');
+    }
+  };
+
+  const addMovieImage = async () => {
+    if (!movieDetail || !imageUrl.trim()) return;
+    try {
+      await movieApi.addImage(movieDetail.movie_id, { image_url: imageUrl.trim(), image_type: 'gallery' });
+      const response = await movieApi.getById(movieDetail.movie_id);
+      setMovieDetail({ ...response.data.movie, genres: response.data.genres || [], cast: response.data.cast || [], streaming: response.data.streaming || [], images: response.data.images || [] });
+      setImageUrl('');
+      showToast('Image added');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not add image', 'error');
+    }
+  };
+
+  const removeMovieImage = async (imageId) => {
+    try {
+      await movieApi.removeImage(movieDetail.movie_id, imageId);
+      setMovieDetail((current) => ({ ...current, images: current.images.filter((image) => image.image_id !== imageId) }));
+      showToast('Image removed');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not remove image', 'error');
+    }
+  };
+
+  const removeMovieFromWatchlist = async (watchlistId, movieId) => {
+    try {
+      await watchlistApi.removeMovie(watchlistId, movieId);
+      await openWatchlist(watchlistId);
+      const refreshed = await watchlistApi.getAll();
+      setWatchlists(refreshed.data?.watchlists || []);
+      showToast('Movie removed from watchlist');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not remove movie', 'error');
     }
   };
 
@@ -642,7 +864,7 @@ function App() {
     setMovieSubmitting(true);
 
     try {
-      await movieApi.create({
+      const payload = {
         title: movieForm.title,
         description: movieForm.description,
         release_year: Number(movieForm.release_year),
@@ -651,16 +873,37 @@ function App() {
         rating: Number(movieForm.rating),
         poster_url: movieForm.poster_url,
         trailer_url: movieForm.trailer_url,
-      });
+      };
+      if (editingMovieId) await movieApi.update(editingMovieId, payload);
+      else await movieApi.create(payload);
       setMovieForm({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', trailer_url: '' });
+      setEditingMovieId(null);
       const response = await movieApi.getAll();
       setMovies(response.data || []);
       setMovieModalOpen(false);
-      showToast('Movie created successfully');
+      showToast(editingMovieId ? 'Movie updated successfully' : 'Movie created successfully');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Movie creation failed', 'error');
     } finally {
       setMovieSubmitting(false);
+    }
+  };
+
+  const editMovie = (movie) => {
+    setEditingMovieId(movie.movie_id);
+    setMovieForm({ title: movie.title || '', description: movie.description || '', release_year: movie.release_year || '', duration: movie.duration || '', language: movie.language || '', rating: movie.rating || '', poster_url: movie.poster_url || '', trailer_url: movie.trailer_url || '' });
+    setMovieModalOpen(true);
+  };
+
+  const saveProfile = async (event) => {
+    event.preventDefault();
+    try {
+      const response = await authApi.updateProfile({ name: profileName });
+      setUser(response.data?.user || user);
+      localStorage.setItem('cineverse_user', JSON.stringify(response.data?.user || user));
+      showToast('Profile updated');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not update profile', 'error');
     }
   };
 
@@ -700,6 +943,54 @@ function App() {
     }
   };
 
+  const editGenre = async (genre) => {
+    const name = window.prompt('Genre name', genre.name);
+    if (!name?.trim() || name.trim() === genre.name) return;
+    try {
+      await genreApi.update(genre.genre_id, { name: name.trim(), description: genre.description || '' });
+      const response = await genreApi.getAll();
+      setGenres(response.data || []);
+      showToast('Genre updated');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Genre update failed', 'error');
+    }
+  };
+
+  const deleteGenre = async (genreId) => {
+    if (!window.confirm('Delete this genre?')) return;
+    try {
+      await genreApi.remove(genreId);
+      setGenres((current) => current.filter((genre) => genre.genre_id !== genreId));
+      showToast('Genre deleted');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Genre deletion failed', 'error');
+    }
+  };
+
+  const createPerson = async (event) => {
+    event.preventDefault();
+    try {
+      await personApi.create(personForm);
+      setPersonForm({ name: '', birth_date: '', biography: '', profile_url: '', person_type: 'actor' });
+      const response = await personApi.getAll();
+      setPeople(response.data || []);
+      showToast('Person created');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Person creation failed', 'error');
+    }
+  };
+
+  const deletePerson = async (personId) => {
+    if (!window.confirm('Delete this person and their credits?')) return;
+    try {
+      await personApi.remove(personId);
+      setPeople((current) => current.filter((person) => person.person_id !== personId));
+      showToast('Person deleted');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Person deletion failed', 'error');
+    }
+  };
+
   const attachCredit = async (event) => {
     event.preventDefault();
     setCreditSubmitting(true);
@@ -719,7 +1010,73 @@ function App() {
     }
   };
 
-  const authButtonLabel = user ? 'Explorer' : 'Login';
+  const goToWatchlists = () => {
+    setSelectedWatchlist(null);
+    setActiveNav('Watchlist');
+    window.location.hash = '/watchlists';
+    setRoute('/watchlists');
+  };
+
+  const goToDashboardTab = (tab) => {
+    setDashboardTab(tab);
+    setActiveNav(tab === 'Profile' ? 'Dashboard' : tab);
+    const nextRoute = tab === 'Profile' ? '/' : `/${tab.toLowerCase()}`;
+    window.location.hash = nextRoute;
+    setRoute(nextRoute);
+  };
+
+  const renderWatchlistsPage = () => (
+    <section className="mt-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Your collection</p>
+          <h1 className="mt-2 text-3xl font-black text-white">Watchlists</h1>
+        </div>
+        <button type="button" onClick={createWatchlist} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-slate-950"><Plus className="h-4 w-4" />New Watchlist</button>
+      </div>
+
+      {selectedWatchlist ? (
+        <div className="space-y-5">
+          <button type="button" onClick={() => setSelectedWatchlist(null)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/50 px-4 py-2 text-sm text-slate-200 hover:border-cyan-400/70 hover:text-white"><ArrowLeft className="h-4 w-4" />Back to Watchlists</button>
+          <div className="flex items-center justify-between gap-3"><div><h2 className="text-2xl font-bold text-white">{selectedWatchlist.name}</h2><p className="mt-1 text-sm text-slate-400">{selectedWatchlist.movies?.length || 0} movies</p></div></div>
+          {watchlistDetailLoading ? <div className="skeleton h-72 rounded-[28px]" /> : selectedWatchlist.movies?.length ? (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {selectedWatchlist.movies.map((movie) => {
+                const movieId = movie.movie_id || movie.id;
+                return <div key={movieId} className="overflow-hidden rounded-[28px] border border-slate-800/80 bg-slate-900/55">
+                  <button type="button" onClick={() => handleMovieOpen(movieId)} className="block w-full text-left"><img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={movie.title} className="aspect-[3/4] w-full object-cover" /><p className="p-4 font-semibold text-white">{movie.title}</p></button>
+                  <button type="button" onClick={() => removeMovieFromWatchlist(selectedWatchlist.watchlist_id, movieId)} className="m-4 mt-0 inline-flex items-center gap-2 rounded-full border border-rose-400/40 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/10"><Trash2 className="h-3.5 w-3.5" />Remove</button>
+                </div>;
+              })}
+            </div>
+          ) : <div className="glass-panel rounded-[28px] border border-slate-800/80 p-6 text-slate-300">No movies in this watchlist yet.</div>}
+        </div>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {watchlists.length ? watchlists.map((list) => (
+            <div key={list.watchlist_id} role="button" tabIndex={0} onClick={() => openWatchlist(list.watchlist_id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openWatchlist(list.watchlist_id); } }} className="glass-panel cursor-pointer rounded-[28px] border border-slate-800/80 p-5 transition hover:border-cyan-400/60">
+              <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold text-white">{list.name}</h2><p className="mt-2 text-sm text-slate-400">{list.movie_count || 0} movies</p></div><Bookmark className="h-5 w-5 text-cyan-300" /></div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button type="button" onClick={(event) => { event.stopPropagation(); renameWatchlist(list); }} className="rounded-full border border-slate-700/80 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/70 hover:text-white">Rename</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); deleteWatchlist(list.watchlist_id); }} className="inline-flex items-center gap-2 rounded-full border border-rose-400/40 px-3 py-2 text-sm text-rose-200 hover:bg-rose-500/10"><Trash2 className="h-4 w-4" />Delete</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); setSharePickerId(sharePickerId === list.watchlist_id ? null : list.watchlist_id); }} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/70 hover:text-white"><Share2 className="h-4 w-4" />Share</button>
+              </div>
+              {sharePickerId === list.watchlist_id && <div className="mt-3 rounded-2xl border border-cyan-400/20 bg-slate-950/40 p-3" onClick={(event) => event.stopPropagation()}><p className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Share with a friend</p>{friends.length ? <div className="flex flex-wrap gap-2">{friends.map((friend) => <button key={friend.user_id} type="button" onClick={() => shareWatchlist(list.watchlist_id, friend)} className="rounded-full border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/70 hover:text-white">{friend.name}</button>)}</div> : <p className="text-sm text-slate-400">Add accepted friends before sharing.</p>}</div>}
+            </div>
+          )) : <div className="glass-panel rounded-[28px] border border-slate-800/80 p-6 text-slate-300">No watchlists yet. Create one to get started.</div>}
+        </div>
+      )}
+      <div className="mt-8 border-t border-slate-800 pt-6">
+        <h2 className="text-xl font-bold text-white">Shared with me</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {sharedWatchlists.length ? sharedWatchlists.map((shared) => (
+            <button key={shared.share_id} type="button" onClick={async () => { try { const response = await watchlistApi.getSharedWatchlist(shared.watchlist_id); setSelectedWatchlist(response.data?.watchlist || null); } catch (error) { showToast(error?.response?.data?.message || 'Could not load shared watchlist', 'error'); } }} className="rounded-2xl border border-slate-700 bg-slate-900/45 p-4 text-left hover:border-cyan-400/60"><p className="font-semibold text-white">{shared.watchlist_name}</p><p className="mt-1 text-sm text-slate-400">Shared by {shared.shared_by_name}</p></button>
+          )) : <p className="text-sm text-slate-400">No shared watchlists yet.</p>}
+        </div>
+      </div>
+    </section>
+  );
+
   const renderRoute = () => {
     if (route === '/login' || route === '/register') {
       return (
@@ -781,13 +1138,17 @@ function App() {
       );
     }
 
+    if (route === '/watchlists') {
+      return renderWatchlistsPage();
+    }
+
     if (route === '/admin') {
       return (
         <div className="space-y-6 py-8">
           <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
             <div className="flex flex-wrap gap-2">
               {adminTabs.map((tab) => (
-                <button key={tab} type="button" onClick={() => setAdminTab(tab)} className={`rounded-full px-4 py-2 text-sm font-medium ${adminTab === tab ? 'bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950' : 'border border-slate-700 bg-slate-900/40 text-slate-300'}`}>
+                <button key={tab} type="button" onClick={() => { setAdminTab(tab); if (tab === 'Streaming Platforms') loadPlatforms(); }} className={`rounded-full px-4 py-2 text-sm font-medium ${adminTab === tab ? 'bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950' : 'border border-slate-700 bg-slate-900/40 text-slate-300'}`}>
                   {tab}
                 </button>
               ))}
@@ -832,6 +1193,7 @@ function App() {
                           <td className="px-3 py-3 text-amber-300">{toDisplayNumber(movie.rating)}</td>
                           <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
                             <button type="button" onClick={() => handleMovieOpen(movieId)} className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-400/70"><MonitorPlay className="h-3.5 w-3.5" /> View</button>
+                            <button type="button" onClick={() => editMovie(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Edit</button>
                             <button type="button" onClick={() => openAssignModal(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Assign Cast/Crew</button>
                             <button type="button" onClick={() => setDeleteMovieId(movieId)} className="inline-flex items-center gap-1 rounded-full border border-rose-400/40 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-400/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
                           </div></td>
@@ -861,7 +1223,7 @@ function App() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {genres.map((genre) => (
                     <div key={genre.genre_id} className="rounded-2xl border border-slate-700 bg-slate-900/40 p-3">
-                      <p className="font-semibold text-white">{genre.name}</p>
+                      <div className="flex items-center justify-between gap-2"><p className="font-semibold text-white">{genre.name}</p><div className="flex gap-2"><button type="button" onClick={() => editGenre(genre)} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={() => deleteGenre(genre.genre_id)} className="text-xs text-rose-300">Delete</button></div></div>
                       <p className="mt-1 text-sm text-slate-400">{genre.description || 'No description provided'}</p>
                     </div>
                   ))}
@@ -870,18 +1232,45 @@ function App() {
             </div>
           )}
 
+          {adminTab === 'Streaming Platforms' && (
+            <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+              <form onSubmit={createPlatform} className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                <h3 className="mb-4 text-xl font-bold text-white">Add streaming platform</h3>
+                <div className="space-y-3">
+                  {['name', 'logo_url', 'country', 'url', 'subscription_type'].map((field) => (
+                    <input key={field} type={field === 'url' || field === 'logo_url' ? 'url' : 'text'} value={platformForm[field]} onChange={(event) => setPlatformForm((current) => ({ ...current, [field]: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder={field.replace('_', ' ')} required={field === 'name'} />
+                  ))}
+                  <button type="submit" className="w-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950">Create platform</button>
+                </div>
+              </form>
+              <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                <h3 className="mb-4 text-xl font-bold text-white">Streaming platforms</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {platforms.length ? platforms.map((platform) => (
+                    <div key={platform.platform_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/40 p-3">
+                      <div className="flex min-w-0 items-center gap-3">{platform.logo_url ? <img src={platform.logo_url} alt="" className="h-9 w-9 rounded object-cover" /> : <Tv className="h-5 w-5 text-cyan-300" />}<span className="truncate font-semibold text-white">{platform.name}</span></div>
+                      <div className="flex gap-2"><button type="button" onClick={() => editPlatform(platform)} className="text-xs text-cyan-300 hover:text-cyan-200">Edit</button><button type="button" onClick={() => deletePlatform(platform.platform_id)} className="text-xs text-rose-300 hover:text-rose-200">Delete</button></div>
+                    </div>
+                  )) : <p className="text-sm text-slate-400">No platforms found.</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
           {adminTab === 'Cast & Crew Assignment' && (
-            <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Cast and crew</p>
-              <h3 className="mt-2 text-2xl font-bold text-white">Assign credits from the movie catalog</h3>
-              <p className="mt-2 max-w-xl text-slate-400">Choose a movie in Manage Movies and use Assign Cast/Crew to connect an existing person to it.</p>
+            <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+              <form onSubmit={createPerson} className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">People catalog</p><h3 className="mt-2 text-xl font-bold text-white">Add cast or crew</h3>
+                <div className="mt-4 space-y-3">{['name', 'birth_date', 'profile_url'].map((field) => <input key={field} type={field === 'birth_date' ? 'date' : field === 'profile_url' ? 'url' : 'text'} value={personForm[field]} onChange={(event) => setPersonForm((current) => ({ ...current, [field]: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder={field.replace('_', ' ')} required={field === 'name'} />)}<textarea value={personForm.biography} onChange={(event) => setPersonForm((current) => ({ ...current, biography: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder="Biography" rows="3" /><select value={personForm.person_type} onChange={(event) => setPersonForm((current) => ({ ...current, person_type: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white"><option value="actor">Actor</option><option value="director">Director</option><option value="writer">Writer</option><option value="producer">Producer</option></select><button type="submit" className="w-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950">Create person</button></div>
+              </form>
+              <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Cast and crew</p><h3 className="mt-2 text-2xl font-bold text-white">Manage people and assign credits</h3><p className="mt-2 max-w-xl text-slate-400">Choose a movie in Manage Movies to assign an existing person.</p><div className="mt-5 grid gap-3 sm:grid-cols-2">{people.map((person) => <div key={person.person_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/40 p-3"><span className="truncate text-sm font-semibold text-white">{person.name}</span><button type="button" onClick={() => deletePerson(person.person_id)} className="text-xs text-rose-300">Delete</button></div>)}</div></div>
             </div>
           )}
 
           {movieModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
               <form onSubmit={createMovie} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[28px] border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-                <div className="mb-5 flex items-center justify-between"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Catalog control</p><h3 className="mt-1 text-2xl font-bold text-white">Add new movie</h3></div><button type="button" onClick={() => setMovieModalOpen(false)} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white" aria-label="Close"><X className="h-5 w-5" /></button></div>
+                <div className="mb-5 flex items-center justify-between"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Catalog control</p><h3 className="mt-1 text-2xl font-bold text-white">{editingMovieId ? 'Edit movie' : 'Add new movie'}</h3></div><button type="button" onClick={() => { setMovieModalOpen(false); setEditingMovieId(null); }} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white" aria-label="Close"><X className="h-5 w-5" /></button></div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="sm:col-span-2"><span className="mb-1 block text-sm text-slate-300">Title</span><input value={movieForm.title} onChange={(event) => setMovieForm((current) => ({ ...current, title: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" required /></label>
                   <label className="sm:col-span-2"><span className="mb-1 block text-sm text-slate-300">Description</span><textarea value={movieForm.description} onChange={(event) => setMovieForm((current) => ({ ...current, description: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" rows="4" required /></label>
@@ -892,7 +1281,7 @@ function App() {
                   <label className="sm:col-span-2"><span className="mb-1 block text-sm text-slate-300">Poster URL</span><input type="url" value={movieForm.poster_url} onChange={(event) => setMovieForm((current) => ({ ...current, poster_url: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" /></label>
                   <label className="sm:col-span-2"><span className="mb-1 block text-sm text-slate-300">Trailer URL</span><input type="url" value={movieForm.trailer_url} onChange={(event) => setMovieForm((current) => ({ ...current, trailer_url: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" /></label>
                 </div>
-                <button type="submit" disabled={movieSubmitting} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60">{movieSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />} {movieSubmitting ? 'Creating...' : 'Create Movie'}</button>
+                <button type="submit" disabled={movieSubmitting} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60">{movieSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />} {movieSubmitting ? 'Saving...' : editingMovieId ? 'Save Movie' : 'Create Movie'}</button>
               </form>
             </div>
           )}
@@ -910,7 +1299,7 @@ function App() {
 
     return (
       <>
-        {!route.startsWith('/movie/') && (
+        {route === '/' && (
           <>
             <section className="relative mt-8 overflow-hidden rounded-[32px] border border-slate-800/80 bg-slate-950 shadow-[0_40px_100px_rgba(8,15,30,0.8)]">
           {featuredMovie ? (
@@ -944,9 +1333,9 @@ function App() {
                       <Play className="h-4 w-4 fill-slate-950" />
                       Quick Watch
                     </button>
-                    <button type="button" onClick={() => addMovieToWatchlist(featuredMovie)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/40 px-6 py-3 text-sm font-semibold text-white hover:border-cyan-400/80 hover:text-cyan-200">
-                      <Plus className="h-4 w-4" />
-                      Add to Watchlist
+                    <button type="button" disabled={addingMovieId !== null} onClick={() => addMovieToWatchlist(featuredMovie)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/40 px-6 py-3 text-sm font-semibold text-white hover:border-cyan-400/80 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-60">
+                      {addingMovieId === (featuredMovie.movie_id || featuredMovie.id || featuredMovie.movieId) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      {addingMovieId === (featuredMovie.movie_id || featuredMovie.id || featuredMovie.movieId) ? 'Adding...' : 'Add to Watchlist'}
                     </button>
                   </div>
                 </div>
@@ -1002,6 +1391,30 @@ function App() {
               </div>
             </div>
           </div>
+
+          {token && recommendations.length > 0 && (
+            <section className="mt-8 border-y border-cyan-400/15 bg-cyan-400/[0.03] px-4 py-6 sm:px-6">
+              <div className="mb-4 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Personalized picks</p>
+                  <h2 className="mt-1 text-2xl font-bold text-white">Recommended for You</h2>
+                </div>
+                <Sparkles className="h-5 w-5 text-cyan-300" />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {recommendations.map((movie) => (
+                  <button key={movie.movie_id} type="button" onClick={() => handleMovieOpen(movie.movie_id)} className="group flex gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-3 text-left transition hover:border-cyan-400/60">
+                    <img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={movie.title} className="h-28 w-20 rounded-xl object-cover" />
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold text-white group-hover:text-cyan-200">{movie.title}</span>
+                      <span className="mt-1 flex items-center gap-1 text-xs text-amber-300"><Star className="h-3 w-3 fill-amber-400" />{toDisplayNumber(movie.average_rating || movie.rating)}</span>
+                      <span className="mt-2 line-clamp-3 block text-xs leading-5 text-slate-400">{movie.reason}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           {loading.movies ? (
             <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -1084,14 +1497,14 @@ function App() {
 
                   <div className="space-y-5 lg:col-span-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      {genres.slice(0, 3).map((genre) => (
+                      {(selectedMovie.genres || []).slice(0, 3).map((genre) => (
                         <span key={genre.genre_id} className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-cyan-200">{genre.name}</span>
                       ))}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
                       <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">{selectedMovie.title}</h1>
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-500/10 px-2.5 py-1 text-sm font-semibold text-amber-300"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{toDisplayNumber(selectedMovie.rating)}</span>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-500/10 px-2.5 py-1 text-sm font-semibold text-amber-300"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{toDisplayNumber(selectedMovie.average_rating || selectedMovie.rating)}</span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 text-sm text-slate-200">
@@ -1105,13 +1518,14 @@ function App() {
                     <p className="max-w-2xl text-base leading-7 text-slate-200/80">{selectedMovie.description}</p>
 
                     <div className="flex flex-wrap gap-4">
-                      <button type="button" onClick={() => setTrailerOpen(true)} disabled={!selectedMovie.trailer_url} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-5 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"><CirclePlay className="h-4 w-4 fill-slate-950" />Quick Watch</button>
-                      <button type="button" onClick={() => addMovieToWatchlist(selectedMovie)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/40 px-5 py-3 text-sm font-semibold text-white hover:border-cyan-400/70 hover:text-cyan-200"><Bookmark className="h-4 w-4" />Add to Watchlist</button>
+                      <button type="button" onClick={() => setTrailerOpen(true)} disabled={!selectedMovie.trailer_url} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-5 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"><CirclePlay className="h-4 w-4 fill-slate-950" />Watch Trailer</button>
+                      <button type="button" onClick={markAsWatched} className="inline-flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-200"><Check className="h-4 w-4" />Mark as Watched</button>
+                      <button type="button" disabled={addingMovieId !== null} onClick={() => addMovieToWatchlist(selectedMovie)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/40 px-5 py-3 text-sm font-semibold text-white hover:border-cyan-400/70 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-60">{addingMovieId === (selectedMovie.movie_id || selectedMovie.id || selectedMovie.movieId) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bookmark className="h-4 w-4" />}{addingMovieId === (selectedMovie.movie_id || selectedMovie.id || selectedMovie.movieId) ? 'Adding...' : 'Add to Watchlist'}</button>
                     </div>
 
                     <div className="grid grid-cols-3 gap-3 sm:max-w-lg">
                       <div className="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-3"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Reviews</p><p className="mt-2 text-xl font-bold text-white">{reviews.length}</p></div>
-                      <div className="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-3"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Rating</p><p className="mt-2 text-xl font-bold text-cyan-300">{toDisplayNumber(selectedMovie.rating)}</p></div>
+                      <div className="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-3"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Rating</p><p className="mt-2 text-xl font-bold text-cyan-300">{toDisplayNumber(selectedMovie.average_rating || selectedMovie.rating)}</p></div>
                       <div className="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-3"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Language</p><p className="mt-2 text-xl font-bold text-white">{selectedMovie.language || 'N/A'}</p></div>
                     </div>
                   </div>
@@ -1225,6 +1639,10 @@ function App() {
               </div>
             </div>
 
+            {user?.role === 'admin' && (
+              <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4 sm:flex-row"><input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="Gallery image URL" className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white" /><button type="button" onClick={addMovieImage} className="rounded-full bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950">Add gallery image</button></div>
+            )}
+
             {/* Trailer Modal */}
             {trailerOpen && selectedMovie.trailer_url && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setTrailerOpen(false)}>
@@ -1257,6 +1675,7 @@ function App() {
                   </div>
                   <div className="relative">
                     <img src={selectedMovie.images[galleryIndex].image_url} alt="Gallery" className="max-h-[75vh] w-full rounded-xl object-contain" />
+                    {user?.role === 'admin' && <button type="button" onClick={() => { removeMovieImage(selectedMovie.images[galleryIndex].image_id); closeGallery(); }} className="mt-3 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Delete image</button>}
                     {selectedMovie.images.length > 1 && (
                       <>
                         <button type="button" onClick={prevGalleryImage} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-slate-950/70 p-2 text-white hover:bg-slate-950"><ArrowLeft className="h-5 w-5" /></button>
@@ -1270,12 +1689,12 @@ function App() {
           </section>
         )}
 
-        {!route.startsWith('/movie/') && route !== '/login' && route !== '/register' && route !== '/admin' && (
-          <section className="mt-8">
+        {['/', '/history', '/friends'].includes(route) && (
+          <section ref={dashboardSectionRef} className="mt-8">
             <div className="glass-panel rounded-[28px] border border-slate-800/80 p-4">
               <div className="flex flex-wrap gap-2 md:hidden">
                 {dashboardTabs.map((tab) => (
-                  <button key={tab} type="button" onClick={() => setDashboardTab(tab)} className={`rounded-full px-4 py-2 text-sm font-medium ${dashboardTab === tab ? 'bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950' : 'border border-slate-700/80 bg-slate-900/50 text-slate-300 hover:border-cyan-400/70 hover:text-white'}`}>
+                  <button key={tab} type="button" onClick={() => { setDashboardTab(tab); setActiveNav(tab === 'Profile' ? 'Dashboard' : tab); }} className={`rounded-full px-4 py-2 text-sm font-medium ${dashboardTab === tab ? 'bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950' : 'border border-slate-700/80 bg-slate-900/50 text-slate-300 hover:border-cyan-400/70 hover:text-white'}`}>
                     {tab}
                   </button>
                 ))}
@@ -1285,6 +1704,7 @@ function App() {
             {dashboardTab === 'Profile' && (
               <div className="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
                 <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                  <form onSubmit={saveProfile} className="mb-6 border-b border-slate-800 pb-5"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Profile</p><div className="mt-3 flex flex-col gap-3 sm:flex-row"><input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder="Your name" required /><button type="submit" className="rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-sm font-semibold text-slate-950">Save profile</button></div><p className="mt-2 text-sm text-slate-400">{user?.email}</p></form>
                   <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">My Stats</p>
                   <div className="mt-5 space-y-4">
                     <div className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4"><p className="text-sm text-slate-400">Movies watched</p><p className="mt-2 text-3xl font-black text-white">{watchHistory.length || 0}</p></div>
@@ -1307,43 +1727,6 @@ function App() {
               </div>
             )}
 
-            {dashboardTab === 'Watchlists' && (
-              <div className="mt-6 space-y-6">
-                <div className="grid gap-5 lg:grid-cols-2">
-                  {loading.watchlists ? <div className="skeleton h-48 rounded-[28px]" /> : watchlists.length ? watchlists.map((list) => (
-                    <div key={list.watchlist_id} className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-xl font-bold text-white">{list.name}</h3>
-                        <p className="text-sm text-slate-400">{list.movie_count || list.movies?.length || 0} titles</p>
-                      </div>
-                      <button type="button" onClick={() => setSharePickerId(sharePickerId === list.watchlist_id ? null : list.watchlist_id)} className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/80 hover:text-white"><Share2 className="h-4 w-4" />Share</button>
-                    </div>
-                    {sharePickerId === list.watchlist_id && <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-slate-950/40 p-3"><p className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Share with a friend</p>{friends.length ? <div className="flex flex-wrap gap-2">{friends.map((friend) => <button key={friend.user_id} type="button" onClick={() => shareWatchlist(list.watchlist_id, friend)} className="rounded-full border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:border-cyan-400/70 hover:text-white">{friend.name}</button>)}</div> : <p className="text-sm text-slate-400">Add accepted friends before sharing.</p>}</div>}
-                    <div className="mt-4 grid grid-cols-3 gap-3">
-                      {(list.movies || []).slice(0, 3).map((movie) => (
-                        <div key={`${list.watchlist_id}-${movie.movie_id || movie.id}`} className="overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/45">
-                          <img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={movie.title} className="h-28 w-full object-cover" />
-                          <p className="p-2 text-xs font-medium text-slate-200">{movie.title}</p>
-                        </div>
-                      ))}
-                    </div>
-                    </div>
-                  )) : <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5 text-slate-300">No watchlists yet. Create one from any movie card.</div>}
-                </div>
-
-                <div ref={sharedWatchlistRef} className={`glass-panel rounded-[28px] border p-5 transition ${sharedWatchlistHighlight ? 'border-cyan-400/80 shadow-lg shadow-cyan-500/20' : 'border-slate-800/80'}`}>
-                  <div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Shared with Me</p><h3 className="mt-1 text-xl font-bold text-white">Watchlists from friends</h3></div><Share2 className="h-5 w-5 text-cyan-300" /></div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {sharedWatchlists.length ? sharedWatchlists.map((shared) => {
-                      const detail = sharedWatchlistDetails[shared.watchlist_id];
-                      return <div key={shared.share_id} className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4"><button type="button" onClick={() => toggleSharedWatchlist(shared.watchlist_id)} className="flex w-full items-center justify-between gap-3 text-left"><div><p className="font-semibold text-white">{shared.watchlist_name}</p><p className="text-sm text-slate-400">Shared by {shared.shared_by_name}</p></div><span className="text-xs text-cyan-300">{detail ? 'Hide movies' : 'View movies'}</span></button>{detail && <div className="mt-4 grid grid-cols-3 gap-2">{(detail.movies || []).map((movie) => <div key={`${shared.watchlist_id}-${movie.movie_id}`} className="overflow-hidden rounded-xl border border-slate-700/80"><img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={movie.title} className="h-20 w-full object-cover" /><p className="p-2 text-xs text-slate-200">{movie.title}</p></div>)}</div>}</div>;
-                    }) : <p className="text-sm text-slate-400">No watchlists have been shared with you yet.</p>}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {dashboardTab === 'History' && (
               <div className="mt-6 grid gap-4">
                 {loading.history ? <div className="skeleton h-28 rounded-[28px]" /> : watchHistory.length ? watchHistory.map((item) => (
@@ -1353,7 +1736,7 @@ function App() {
                         <h3 className="text-lg font-semibold text-white">{item.title}</h3>
                         <p className="text-sm text-slate-400">{item.watched_at ? new Date(item.watched_at).toLocaleString() : 'Recently watched'}</p>
                       </div>
-                      <span className="text-sm font-semibold text-cyan-300">{item.progress ?? 0}%</span>
+                      <div className="flex items-center gap-3"><span className="text-sm font-semibold text-cyan-300">{item.progress ?? 0}%</span><button type="button" onClick={() => deleteHistoryItem(item.history_id)} className="text-xs text-rose-300 hover:text-rose-200">Remove</button></div>
                     </div>
                     <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500" style={{ width: `${item.progress ?? 0}%` }} /></div>
                   </div>
@@ -1419,16 +1802,41 @@ function App() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.16),transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(99,102,241,0.18),transparent_25%)]" />
 
       <div className="relative mx-auto max-w-7xl px-4 pb-20 pt-6 sm:px-6 lg:px-8">
-        <header className={`app-header sticky top-4 z-30 flex items-center gap-3 rounded-2xl border border-slate-800/80 px-3 py-3 sm:px-4 transition-transform duration-300 ${headerVisible ? 'translate-y-0' : '-translate-y-[calc(100%+2rem)]'}`}>
+        <header className={`app-header sticky top-4 z-30 flex items-center gap-3 rounded-2xl px-3 py-3 transition-transform duration-300 sm:px-4 ${token ? 'border border-slate-800/80' : 'justify-center bg-transparent shadow-none'} ${headerVisible ? 'translate-y-0' : '-translate-y-[calc(100%+2rem)]'}`}>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500 text-slate-950 shadow-lg shadow-cyan-500/20"><Film className="h-5 w-5" /></div>
-            <p className="text-lg font-semibold tracking-tight text-white">Cineverse</p>
+            {token && <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500 text-slate-950 shadow-lg shadow-cyan-500/20"><Film className="h-5 w-5" /></div>}
+            <p className={`${token ? 'text-lg font-semibold tracking-tight text-white' : 'bg-gradient-to-r from-cyan-300 via-white to-indigo-300 bg-clip-text text-xl font-black tracking-[0.08em] text-transparent drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]'}`}>Cineverse</p>
           </div>
 
           {token && (
-            <div className="hidden min-w-[220px] items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-slate-300 md:flex lg:min-w-[300px]">
+            <div ref={searchMenuRef} className="relative hidden min-w-[220px] items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-slate-300 md:flex lg:min-w-[300px]">
               <Search className="h-4 w-4 text-slate-400" />
-              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search titles, genres..." className="w-full bg-transparent text-sm text-white placeholder:text-slate-400 focus:outline-none" />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                onFocus={() => setSearchOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && searchSuggestions[0]) { setSearchOpen(false); setSearchTerm(''); handleMovieOpen(searchSuggestions[0].movie_id); }
+                }}
+                placeholder="Search titles, genres..."
+                className="w-full bg-transparent text-sm text-white placeholder:text-slate-400 focus:outline-none"
+              />
+              {searchOpen && searchSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/95 p-1 shadow-2xl">
+                  {searchSuggestions.map((movie) => (
+                    <button
+                      key={movie.movie_id}
+                      type="button"
+                      onClick={() => { setSearchOpen(false); setSearchTerm(''); handleMovieOpen(movie.movie_id); }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-cyan-400/10 hover:text-white"
+                    >
+                      <img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt="" className="h-10 w-7 rounded object-cover" />
+                      <span className="min-w-0 flex-1 truncate">{movie.title}</span>
+                      <span className="text-xs text-amber-300">{toDisplayNumber(movie.average_rating || movie.rating)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1446,40 +1854,34 @@ function App() {
 
           {token && (
             <nav className="hidden items-center gap-6 text-sm text-slate-300 xl:flex">
-              <button type="button" onClick={() => { window.location.hash = '/'; setRoute('/'); }} className="transition hover:text-white">Home</button>
-              <button type="button" onClick={() => { if (user?.role === 'admin') { window.location.hash = '/admin'; setRoute('/admin'); } else { window.location.hash = '/'; setRoute('/'); } }} className="transition hover:text-white">Dashboard</button>
-              <button type="button" onClick={() => { setSortBy('rating'); window.location.hash = '/'; setRoute('/'); }} className="transition hover:text-white">Trending</button>
+              <button type="button" onClick={() => { setActiveNav('Home'); setDashboardTab('Profile'); window.location.hash = '/'; setRoute('/'); }} className={`rounded-full px-3 py-2 transition ${activeNav === 'Home' ? 'bg-cyan-400/15 text-cyan-200' : 'hover:bg-slate-800/60 hover:text-white'}`}>Home</button>
+              <button type="button" onClick={() => { setActiveNav('Dashboard'); setDashboardTab('Profile'); if (user?.role === 'admin') { window.location.hash = '/admin'; setRoute('/admin'); } else { window.location.hash = '/'; setRoute('/'); } }} className={`rounded-full px-3 py-2 transition ${activeNav === 'Dashboard' ? 'bg-cyan-400/15 text-cyan-200' : 'hover:bg-slate-800/60 hover:text-white'}`}>Dashboard</button>
+              <button type="button" onClick={() => { setActiveNav('Trending'); setDashboardTab('Profile'); setSortBy('rating'); window.location.hash = '/'; setRoute('/'); }} className={`rounded-full px-3 py-2 transition ${activeNav === 'Trending' ? 'bg-cyan-400/15 text-cyan-200' : 'hover:bg-slate-800/60 hover:text-white'}`}>Trending</button>
             </nav>
           )}
 
           {token && (
             <div className="ml-auto hidden items-center gap-3 md:flex">
-              <button type="button" onClick={() => { setDashboardTab('Watchlists'); window.location.hash = '/'; setRoute('/'); }} className="rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 transition hover:border-cyan-400/80 hover:text-white">Watchlist</button>
-              <button type="button" onClick={() => { setDashboardTab('History'); window.location.hash = '/'; setRoute('/'); }} className="rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 transition hover:border-cyan-400/80 hover:text-white">History</button>
-              <button type="button" onClick={() => { setDashboardTab('Friends'); window.location.hash = '/'; setRoute('/'); }} className="rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 transition hover:border-cyan-400/80 hover:text-white">Friends</button>
-              <button type="button" onClick={() => { setDashboardTab('Profile'); window.location.hash = '/'; setRoute('/'); }} className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-white"><UserRound className="h-4 w-4" />{user ? user.name : 'Profile'}</button>
+              <button type="button" onClick={goToWatchlists} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Watchlist' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Watchlist</button>
+              <button type="button" onClick={() => goToDashboardTab('History')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'History' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>History</button>
+              <button type="button" onClick={() => goToDashboardTab('Friends')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Friends' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Friends</button>
+              <button type="button" onClick={() => goToDashboardTab('Profile')} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${activeNav === 'Dashboard' ? 'border-cyan-400/80 bg-cyan-400 text-slate-950 hover:bg-cyan-300' : 'border-transparent bg-slate-100 text-slate-900 hover:bg-white'}`}><UserRound className="h-4 w-4" />{user ? user.name : 'Profile'}</button>
             </div>
           )}
 
           <div className="ml-auto flex items-center gap-2 md:ml-0">
+            {token && <div className="relative md:hidden"><button type="button" onClick={() => setMobileMenuOpen((current) => !current)} className="rounded-full border border-slate-700/80 bg-slate-900/40 p-2 text-slate-200" aria-label="Open navigation"><Menu className="h-4 w-4" /></button>{mobileMenuOpen && <div className="absolute right-0 top-12 z-50 grid w-48 gap-1 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl"><button type="button" onClick={() => { setMobileMenuOpen(false); setActiveNav('Home'); setRoute('/'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Home</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToWatchlists(); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Watchlist</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToDashboardTab('History'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">History</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToDashboardTab('Friends'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Friends</button>{user?.role === 'admin' && <button type="button" onClick={() => { setMobileMenuOpen(false); setRoute('/admin'); }} className="rounded-xl px-3 py-2 text-left text-sm text-cyan-200 hover:bg-slate-800">Admin</button>}</div>}</div>}
             {token && <div ref={notificationMenuRef} className="relative">
               <button type="button" onClick={() => setNotificationsOpen((current) => !current)} className="relative rounded-full border border-slate-700/80 bg-slate-900/40 p-2 text-slate-200 transition hover:border-cyan-400/70 hover:text-white"><Bell className="h-4 w-4" />{unreadCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}</button>
               {notificationsOpen && <div className="glass-panel absolute right-0 top-12 z-50 w-80 rounded-2xl border border-slate-800/80 p-3 shadow-2xl sm:w-96">
                 <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3"><h3 className="font-semibold text-white">Notifications</h3><button type="button" onClick={markAllNotificationsRead} className="text-xs text-cyan-300 hover:text-cyan-200">Mark all as read</button></div>
                 <div className="mt-2 max-h-80 overflow-y-auto">{notifications.length ? notifications.map((notification) => {
                   const text = notification.notification_type === 'friend_request' ? `${notification.user_name} sent you a friend request` : notification.notification_type === 'friend_accepted' ? `${notification.user_name} accepted your friend request` : `${notification.user_name} shared "${notification.watchlist_name}" with you`;
-                  return <button key={notification.notification_id} type="button" onClick={() => handleNotificationClick(notification)} className={`block w-full rounded-xl p-3 text-left transition hover:bg-slate-800/60 ${notification.is_read ? 'opacity-55' : 'bg-cyan-500/5'}`}><p className="text-sm text-slate-200">{text}</p><p className="mt-1 text-xs text-slate-500">{timeAgo(notification.created_at)}</p></button>;
+                  return <div key={notification.notification_id} className={`flex items-start gap-2 rounded-xl p-3 transition hover:bg-slate-800/60 ${notification.is_read ? 'opacity-55' : 'bg-cyan-500/5'}`}><button type="button" onClick={() => handleNotificationClick(notification)} className="min-w-0 flex-1 text-left"><p className="text-sm text-slate-200">{text}</p><p className="mt-1 text-xs text-slate-500">{timeAgo(notification.created_at)}</p></button><button type="button" onClick={() => deleteNotification(notification.notification_id)} className="p-1 text-xs text-rose-300" aria-label="Delete notification">×</button></div>;
                 }) : <p className="p-4 text-center text-sm text-slate-400">You are all caught up.</p>}</div>
               </div>}
             </div>}
-            {token ? (
-              <button type="button" onClick={handleLogout} className="rounded-full border border-cyan-400/60 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20">Logout</button>
-            ) : (
-              <button type="button" onClick={() => { window.location.hash = '/login'; setRoute('/login'); }} className="rounded-full border border-cyan-400/60 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20">{authButtonLabel}</button>
-            )}
-            {!token && (
-              <button type="button" onClick={() => { window.location.hash = '/register'; setRoute('/register'); }} className="hidden rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 sm:inline-flex">Sign up</button>
-            )}
+            {token && <button type="button" onClick={handleLogout} className="rounded-full border border-cyan-400/60 bg-cyan-500/10 px-3 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20">Logout</button>}
           </div>
         </header>
 

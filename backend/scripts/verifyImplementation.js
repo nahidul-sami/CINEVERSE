@@ -86,7 +86,7 @@ async function verifyImplementation() {
         console.log(`   ✓ People with profile photos: ${castWithPhoto.rows[0].count}`);
 
         const sampleCast = await pool.query(`
-            SELECT p.name, p.profile_url FROM person 
+            SELECT p.name, p.profile_url FROM person p
             WHERE profile_url IS NOT NULL 
             LIMIT 3
         `);
