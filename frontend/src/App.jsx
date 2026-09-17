@@ -133,7 +133,9 @@ function App() {
   const [genreForm, setGenreForm] = useState({ name: '', description: '' });
   const [editingGenreId, setEditingGenreId] = useState(null);
   const [editingGenreForm, setEditingGenreForm] = useState({ name: '', description: '' });
+  const [deleteGenreId, setDeleteGenreId] = useState(null);
   const [personForm, setPersonForm] = useState({ name: '', birth_date: '', biography: '', profile_url: '', person_type: 'actor' });
+  const [editingPersonId, setEditingPersonId] = useState(null);
   const [platformForm, setPlatformForm] = useState({ name: '', logo_url: '', country: '', url: '', subscription_type: '' });
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
   const [movieSearch, setMovieSearch] = useState('');
@@ -932,6 +934,12 @@ function App() {
     try {
       await movieApi.remove(deleteMovieId);
       setMovies((current) => current.filter((movie) => Number(movie.movie_id) !== Number(deleteMovieId)));
+      if (Number(movieDetail?.movie_id) === Number(deleteMovieId)) {
+        const nextRoute = user?.role === 'admin' ? '/admin' : '/';
+        setMovieDetail(null);
+        setRoute(nextRoute);
+        window.location.hash = nextRoute;
+      }
       setDeleteMovieId(null);
       showToast('Movie deleted successfully');
     } catch (error) {
@@ -940,11 +948,15 @@ function App() {
   };
 
   const openAssignModal = async (movie) => {
-    setAssignMovie(movie);
+    setAssignMovie({ ...movie, cast: [] });
     setCreditForm((current) => ({ ...current, movie_id: movie.movie_id, person_type: 'actor', character_name: '' }));
     try {
-      const response = await personApi.getAll();
-      setPeople(response.data || []);
+      const [peopleResponse, movieResponse] = await Promise.all([
+        personApi.getAll(),
+        movieApi.getById(movie.movie_id),
+      ]);
+      setPeople(peopleResponse.data || []);
+      setAssignMovie((current) => ({ ...current, cast: movieResponse.data?.cast || [] }));
     } catch (error) {
       showToast(error?.response?.data?.message || 'Could not load people', 'error');
     }
@@ -987,11 +999,11 @@ function App() {
     }
   };
 
-  const deleteGenre = async (genreId) => {
-    if (!window.confirm('Delete this genre?')) return;
+  const deleteGenre = async () => {
     try {
-      await genreApi.remove(genreId);
-      setGenres((current) => current.filter((genre) => genre.genre_id !== genreId));
+      await genreApi.remove(deleteGenreId);
+      setGenres((current) => current.filter((genre) => genre.genre_id !== deleteGenreId));
+      setDeleteGenreId(null);
       showToast('Genre deleted');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Genre deletion failed', 'error');
@@ -1001,14 +1013,24 @@ function App() {
   const createPerson = async (event) => {
     event.preventDefault();
     try {
-      await personApi.create(personForm);
+      if (editingPersonId) {
+        await personApi.update(editingPersonId, personForm);
+      } else {
+        await personApi.create(personForm);
+      }
       setPersonForm({ name: '', birth_date: '', biography: '', profile_url: '', person_type: 'actor' });
+      setEditingPersonId(null);
       const response = await personApi.getAll();
       setPeople(response.data || []);
-      showToast('Person created');
+      showToast(editingPersonId ? 'Person updated' : 'Person created');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Person creation failed', 'error');
     }
+  };
+
+  const editPerson = (person) => {
+    setEditingPersonId(person.person_id);
+    setPersonForm({ name: person.name || '', birth_date: person.birth_date || '', biography: person.biography || '', profile_url: person.profile_url || '', person_type: person.person_type || 'actor' });
   };
 
   const deletePerson = async (personId) => {
@@ -1032,12 +1054,26 @@ function App() {
         credit_type: creditForm.person_type,
         character_name: creditForm.character_name,
       });
-      setAssignMovie(null);
+      const response = await movieApi.getById(Number(creditForm.movie_id));
+      setAssignMovie((current) => (current ? { ...current, cast: response.data?.cast || [] } : current));
       showToast('Cast/crew credit assigned');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Could not attach credit', 'error');
     } finally {
       setCreditSubmitting(false);
+    }
+  };
+
+  const removeMovieCredit = async (credit) => {
+    try {
+      await personApi.removeMovieCredit(assignMovie.movie_id, credit.person_id, credit.credit_type);
+      setAssignMovie((current) => ({
+        ...current,
+        cast: (current.cast || []).filter((item) => !(Number(item.person_id) === Number(credit.person_id) && item.credit_type === credit.credit_type)),
+      }));
+      showToast('Cast/crew credit removed');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not remove cast/crew credit', 'error');
     }
   };
 
@@ -1131,9 +1167,9 @@ function App() {
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
               {selectedWatchlist.movies.map((movie) => {
                 const movieId = movie.movie_id || movie.id;
-                return <div key={movieId} className="overflow-hidden rounded-[28px] border border-slate-800/80 bg-slate-900/55">
+                return <div key={movieId} className="group overflow-hidden rounded-[28px] border border-slate-800/80 bg-slate-900/55">
                   <button type="button" onClick={() => handleMovieOpen(movieId)} className="block w-full text-left"><img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={movie.title} className="aspect-[3/4] w-full object-cover" /><p className="p-4 font-semibold text-white">{movie.title}</p></button>
-                  <button type="button" onClick={() => removeMovieFromWatchlist(selectedWatchlist.watchlist_id, movieId)} className="m-4 mt-0 inline-flex items-center gap-2 rounded-full border border-rose-400/40 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/10"><Trash2 className="h-3.5 w-3.5" />Remove</button>
+                  <div className="relative -mt-20 flex justify-end px-3 pb-3 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100"><button type="button" onClick={() => removeMovieFromWatchlist(selectedWatchlist.watchlist_id, movieId)} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-400/50 bg-slate-950/85 text-rose-200 hover:bg-rose-500/20" aria-label={`Remove ${movie.title} from watchlist`} title="Remove from watchlist"><X className="h-4 w-4" /></button></div>
                 </div>;
               })}
             </div>
@@ -1360,7 +1396,7 @@ function App() {
                           <div className="flex gap-2"><button type="submit" className="rounded-full bg-cyan-400 px-3 py-1.5 text-xs font-semibold text-slate-950">Save</button><button type="button" onClick={() => setEditingGenreId(null)} className="rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300">Cancel</button></div>
                         </form>
                       ) : (
-                        <><div className="flex items-center justify-between gap-2"><p className="font-semibold text-white">{genre.name}</p><div className="flex gap-2"><button type="button" onClick={() => editGenre(genre)} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={() => deleteGenre(genre.genre_id)} className="text-xs text-rose-300">Delete</button></div></div><p className="mt-1 text-sm text-slate-400">{genre.description || 'No description provided'}</p></>
+                        <><div className="flex items-center justify-between gap-2"><p className="font-semibold text-white">{genre.name}</p><div className="flex gap-2"><button type="button" onClick={() => editGenre(genre)} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={() => setDeleteGenreId(genre.genre_id)} className="text-xs text-rose-300">Delete</button></div></div><p className="mt-1 text-sm text-slate-400">{genre.description || 'No description provided'}</p></>
                       )}
                     </div>
                   ))}
@@ -1397,10 +1433,10 @@ function App() {
           {adminTab === 'Cast & Crew Assignment' && (
             <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
               <form onSubmit={createPerson} className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">People catalog</p><h3 className="mt-2 text-xl font-bold text-white">Add cast or crew</h3>
-                <div className="mt-4 space-y-3">{['name', 'birth_date', 'profile_url'].map((field) => <input key={field} type={field === 'birth_date' ? 'date' : field === 'profile_url' ? 'url' : 'text'} value={personForm[field]} onChange={(event) => setPersonForm((current) => ({ ...current, [field]: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder={field.replace('_', ' ')} required={field === 'name'} />)}<textarea value={personForm.biography} onChange={(event) => setPersonForm((current) => ({ ...current, biography: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder="Biography" rows="3" /><select value={personForm.person_type} onChange={(event) => setPersonForm((current) => ({ ...current, person_type: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white"><option value="actor">Actor</option><option value="director">Director</option><option value="writer">Writer</option><option value="producer">Producer</option></select><button type="submit" className="w-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950">Create person</button></div>
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">People catalog</p><h3 className="mt-2 text-xl font-bold text-white">{editingPersonId ? 'Edit cast or crew' : 'Add cast or crew'}</h3>
+                <div className="mt-4 space-y-3">{['name', 'birth_date', 'profile_url'].map((field) => <input key={field} type={field === 'birth_date' ? 'date' : field === 'profile_url' ? 'url' : 'text'} value={personForm[field]} onChange={(event) => setPersonForm((current) => ({ ...current, [field]: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder={field.replace('_', ' ')} required={field === 'name'} />)}<textarea value={personForm.biography} onChange={(event) => setPersonForm((current) => ({ ...current, biography: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder="Biography" rows="3" /><select value={personForm.person_type} onChange={(event) => setPersonForm((current) => ({ ...current, person_type: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white"><option value="actor">Actor</option><option value="director">Director</option><option value="writer">Writer</option><option value="producer">Producer</option></select><button type="submit" className="w-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950">{editingPersonId ? 'Save person' : 'Create person'}</button>{editingPersonId && <button type="button" onClick={() => { setEditingPersonId(null); setPersonForm({ name: '', birth_date: '', biography: '', profile_url: '', person_type: 'actor' }); }} className="w-full rounded-full border border-slate-700 px-4 py-3 text-sm text-slate-300">Cancel edit</button>}</div>
               </form>
-              <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Cast and crew</p><h3 className="mt-2 text-2xl font-bold text-white">Manage people and assign credits</h3><p className="mt-2 max-w-xl text-slate-400">Choose a movie in Manage Movies to assign an existing person.</p><div className="mt-5 grid gap-3 sm:grid-cols-2">{people.map((person) => <div key={person.person_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/40 p-3"><span className="truncate text-sm font-semibold text-white">{person.name}</span><button type="button" onClick={() => deletePerson(person.person_id)} className="text-xs text-rose-300">Delete</button></div>)}</div></div>
+              <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Cast and crew</p><h3 className="mt-2 text-2xl font-bold text-white">Manage people and assign credits</h3><p className="mt-2 max-w-xl text-slate-400">Choose a movie in Manage Movies to assign an existing person.</p><div className="mt-5 grid gap-3 sm:grid-cols-2">{people.map((person) => <div key={person.person_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/40 p-3"><span className="truncate text-sm font-semibold text-white">{person.name}</span><div className="flex gap-3"><button type="button" onClick={() => editPerson(person)} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={() => deletePerson(person.person_id)} className="text-xs text-rose-300">Delete</button></div></div>)}</div></div>
             </div>
           )}
 
@@ -1426,6 +1462,19 @@ function App() {
 
           {deleteMovieId !== null && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] border border-rose-400/30 bg-slate-900 p-6 shadow-2xl"><h3 className="text-xl font-bold text-white">Delete movie?</h3><p className="mt-2 text-slate-400">Are you sure you want to delete this movie?</p><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setDeleteMovieId(null)} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300">Cancel</button><button type="button" onClick={deleteMovie} className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Delete</button></div></div></div>
+          )}
+
+          {deleteGenreId !== null && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] border border-rose-400/30 bg-slate-900 p-6 shadow-2xl"><h3 className="text-xl font-bold text-white">Delete genre?</h3><p className="mt-2 text-slate-400">Are you sure you want to delete this genre?</p><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setDeleteGenreId(null)} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300">Cancel</button><button type="button" onClick={deleteGenre} className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Delete</button></div></div></div>
+          )}
+
+          {assignMovie && (
+            <div className="pointer-events-none fixed inset-y-0 left-0 z-[51] flex w-full max-w-sm items-center p-4 lg:left-4">
+              <div className="pointer-events-auto max-h-[70vh] w-full overflow-y-auto rounded-[28px] border border-slate-700 bg-slate-900/95 p-5 shadow-2xl">
+                <div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Existing credits</p><h3 className="mt-1 text-lg font-bold text-white">{assignMovie.title}</h3></div><span className="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-400">{assignMovie.cast?.length || 0}</span></div>
+                <div className="mt-4 space-y-2">{assignMovie.cast?.length ? assignMovie.cast.map((credit) => <div key={`${credit.person_id}-${credit.credit_type}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{credit.name}</p><p className="mt-1 text-xs capitalize text-slate-400">{credit.credit_type}{credit.character_name ? ` · ${credit.character_name}` : ''}</p></div><button type="button" onClick={() => removeMovieCredit(credit)} className="shrink-0 rounded-full border border-rose-400/40 p-2 text-rose-300 hover:bg-rose-500/10" aria-label={`Remove ${credit.name} credit`} title="Remove credit"><X className="h-3.5 w-3.5" /></button></div>) : <p className="text-sm text-slate-400">No cast or crew credits assigned.</p>}</div>
+              </div>
+            </div>
           )}
 
           {assignMovie && (
