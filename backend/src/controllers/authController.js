@@ -3,6 +3,12 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
+const normalizeProfileImage = (value) => {
+    if (!value) return null;
+    if (value.startsWith("http://") || value.startsWith("https://")) return value;
+    return value.startsWith("/") ? `http://localhost:5000${value}` : `http://localhost:5000/${value}`;
+};
+
 exports.registerUser = async (req, res) => {
     // "role" is intentionally NOT read from req.body — public registration
     // must never let the client choose its own role. Admins are provisioned
@@ -29,8 +35,8 @@ exports.registerUser = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const newUser = await pool.query(
-            "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, 'user') RETURNING user_id, name, email, role, created_at",
-            [name, email, hashedPassword]
+            "INSERT INTO users (name, username, display_name, email, password, role) VALUES ($1, $4, $1, $2, $3, 'user') RETURNING user_id, name, username, display_name, bio, profile_image, email, role, created_at",
+            [name, email, hashedPassword, `user_${Date.now()}`]
         );
 
         res.status(201).json({
@@ -82,6 +88,10 @@ exports.loginUser = async (req, res) => {
             user: {
                 user_id: user.user_id,
                 name: user.name,
+                username: user.username,
+                display_name: user.display_name || user.name,
+                bio: user.bio || "",
+                profile_image: normalizeProfileImage(user.profile_image),
                 email: user.email,
                 role: user.role
             }
@@ -110,7 +120,7 @@ exports.logoutUser = async (req, res) => {
 const getProfile = async (req, res) => {
     try {
         const userResult = await pool.query(
-            "SELECT user_id, name, email, role, created_at FROM users WHERE user_id = $1",
+            "SELECT user_id, name, username, display_name, bio, profile_image, email, role, created_at FROM users WHERE user_id = $1",
             [req.user.user_id]
         );
 
@@ -118,7 +128,7 @@ const getProfile = async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
 
-        res.status(200).json({ user: userResult.rows[0] });
+        res.status(200).json({ user: { ...userResult.rows[0], profile_image: normalizeProfileImage(userResult.rows[0].profile_image) } });
     } catch (error) {
         console.error("GET PROFILE ERROR:", error);
         res.status(500).json({ message: "Server error while fetching profile" });
@@ -134,13 +144,13 @@ const updateProfile = async (req, res) => {
 
     try {
         const updatedUser = await pool.query(
-            "UPDATE users SET name = $1 WHERE user_id = $2 RETURNING user_id, name, email, role, created_at",
+            "UPDATE users SET name = $1 WHERE user_id = $2 RETURNING user_id, name, username, display_name, bio, profile_image, email, role, created_at",
             [name, req.user.user_id]
         );
         if (updatedUser.rows.length === 0) {
             return res.status(404).json({ message: "User not found" });
         }
-        res.status(200).json({ message: "Profile updated successfully", user: updatedUser.rows[0] });
+        res.status(200).json({ message: "Profile updated successfully", user: { ...updatedUser.rows[0], profile_image: normalizeProfileImage(updatedUser.rows[0].profile_image) } });
     } catch (error) {
         console.error("UPDATE PROFILE ERROR:", error);
         res.status(500).json({ message: "Server error while updating profile" });

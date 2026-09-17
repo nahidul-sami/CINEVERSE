@@ -1,4 +1,4 @@
-import { CalendarRange, Camera, Edit3, Film, MessageSquareText, Users, BookOpenText, Clock3, Sparkles } from 'lucide-react';
+import { CalendarRange, Edit3, Film, MessageSquareText, Users, BookOpenText, Clock3, Sparkles } from 'lucide-react';
 
 const normalizeImage = (value) => {
   if (!value) return null;

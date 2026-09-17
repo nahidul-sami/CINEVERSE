@@ -55,10 +55,12 @@ function EditProfilePage({ user, onCancel, onSaved }) {
       };
 
       const response = await userApi.updateProfile(payload);
+      let savedUser = response.data?.user || user;
       if (file) {
-        await userApi.uploadProfilePicture(file);
+        const imageResponse = await userApi.uploadProfilePicture(file);
+        savedUser = imageResponse.data?.user || savedUser;
       }
-      onSaved(response.data?.user || user);
+      onSaved(savedUser);
     } catch (err) {
       setError(err?.response?.data?.message || 'Profile update failed');
     } finally {

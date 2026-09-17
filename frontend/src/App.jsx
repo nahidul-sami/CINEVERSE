@@ -129,8 +129,10 @@ function App() {
   const [selectedWatchlist, setSelectedWatchlist] = useState(null);
   const [watchlistDetailLoading, setWatchlistDetailLoading] = useState(false);
   const [addingMovieId, setAddingMovieId] = useState(null);
-  const [movieForm, setMovieForm] = useState({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', trailer_url: '' });
+  const [movieForm, setMovieForm] = useState({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', backdrop_url: '', trailer_url: '' });
   const [genreForm, setGenreForm] = useState({ name: '', description: '' });
+  const [editingGenreId, setEditingGenreId] = useState(null);
+  const [editingGenreForm, setEditingGenreForm] = useState({ name: '', description: '' });
   const [personForm, setPersonForm] = useState({ name: '', birth_date: '', biography: '', profile_url: '', person_type: 'actor' });
   const [platformForm, setPlatformForm] = useState({ name: '', logo_url: '', country: '', url: '', subscription_type: '' });
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
@@ -220,17 +222,10 @@ function App() {
   }, [route]);
 
   useEffect(() => {
-    setSearchOpen(false);
+    window.setTimeout(() => setSearchOpen(false), 0);
     if (route.startsWith('/movie/')) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    if (route === '/history') setDashboardTab('History');
-    if (route === '/friends') setDashboardTab('Friends');
-    if (route === '/') setDashboardTab('Profile');
-    if (route === '/profile') setDashboardTab('Profile');
-    if (route === '/profile/edit') setDashboardTab('Profile');
-    if (route === '/search') setActiveNav('Search');
-    if (route.startsWith('/users/')) setActiveNav('Profile');
   }, [route]);
 
   useEffect(() => {
@@ -295,7 +290,7 @@ function App() {
   useEffect(() => {
     if (!token) return undefined;
 
-    fetchNotifications();
+    window.setTimeout(fetchNotifications, 0);
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, [token, fetchNotifications]);
@@ -350,7 +345,6 @@ function App() {
 
   useEffect(() => {
     if (!token) {
-      setRecommendations([]);
       return undefined;
     }
 
@@ -428,7 +422,7 @@ function App() {
     if (!route.startsWith('/movie/')) return;
     const movieId = Number(route.match(/^\/movie\/(\d+)$/)?.[1]);
     const historyItem = watchHistory.find((item) => Number(item.movie_id) === movieId);
-    if (historyItem) setWatchProgress(Number(historyItem.progress) || 0);
+    if (historyItem) window.setTimeout(() => setWatchProgress(Number(historyItem.progress) || 0), 0);
   }, [route, watchHistory]);
 
   const filteredMovies = useMemo(() => {
@@ -598,7 +592,6 @@ function App() {
     setNotificationsOpen(false);
     if (notification.notification_type === 'watchlist_share') {
       setActiveNav('Watchlist');
-      window.location.hash = '/watchlists';
       setRoute('/watchlists');
       return;
     }
@@ -899,11 +892,12 @@ function App() {
         language: movieForm.language,
         rating: Number(movieForm.rating),
         poster_url: movieForm.poster_url,
+        backdrop_url: movieForm.backdrop_url,
         trailer_url: movieForm.trailer_url,
       };
       if (editingMovieId) await movieApi.update(editingMovieId, payload);
       else await movieApi.create(payload);
-      setMovieForm({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', trailer_url: '' });
+      setMovieForm({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', backdrop_url: '', trailer_url: '' });
       setEditingMovieId(null);
       const response = await movieApi.getAll();
       setMovies(response.data || []);
@@ -918,7 +912,7 @@ function App() {
 
   const editMovie = (movie) => {
     setEditingMovieId(movie.movie_id);
-    setMovieForm({ title: movie.title || '', description: movie.description || '', release_year: movie.release_year || '', duration: movie.duration || '', language: movie.language || '', rating: movie.rating || '', poster_url: movie.poster_url || '', trailer_url: movie.trailer_url || '' });
+    setMovieForm({ title: movie.title || '', description: movie.description || '', release_year: movie.release_year || '', duration: movie.duration || '', language: movie.language || '', rating: movie.rating || '', poster_url: movie.poster_url || '', backdrop_url: movie.backdrop_url || '', trailer_url: movie.trailer_url || '' });
     setMovieModalOpen(true);
   };
 
@@ -970,13 +964,23 @@ function App() {
     }
   };
 
-  const editGenre = async (genre) => {
-    const name = window.prompt('Genre name', genre.name);
-    if (!name?.trim() || name.trim() === genre.name) return;
+  const editGenre = (genre) => {
+    setEditingGenreId(genre.genre_id);
+    setEditingGenreForm({ name: genre.name || '', description: genre.description || '' });
+  };
+
+  const saveGenreEdit = async (event) => {
+    event.preventDefault();
+    if (!editingGenreForm.name.trim()) {
+      showToast('Genre name is required', 'error');
+      return;
+    }
+
     try {
-      await genreApi.update(genre.genre_id, { name: name.trim(), description: genre.description || '' });
+      await genreApi.update(editingGenreId, { name: editingGenreForm.name.trim(), description: editingGenreForm.description.trim() });
       const response = await genreApi.getAll();
       setGenres(response.data || []);
+      setEditingGenreId(null);
       showToast('Genre updated');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Genre update failed', 'error');
@@ -1104,7 +1108,7 @@ function App() {
   const goToDashboardTab = (tab) => {
     setDashboardTab(tab);
     setActiveNav(tab === 'Profile' ? 'Dashboard' : tab);
-    const nextRoute = tab === 'Profile' ? '/' : `/${tab.toLowerCase()}`;
+    const nextRoute = tab === 'Profile' ? '/profile' : `/${tab.toLowerCase()}`;
     window.location.hash = nextRoute;
     setRoute(nextRoute);
   };
@@ -1226,6 +1230,48 @@ function App() {
       return renderWatchlistsPage();
     }
 
+    if (route === '/profile') {
+      return (
+        <ProfilePage
+          user={profileData?.user || user}
+          profileData={profileData}
+          onEdit={() => { window.location.hash = '/profile/edit'; setRoute('/profile/edit'); }}
+          onNavigateUser={(targetRoute) => { window.location.hash = targetRoute; setRoute(targetRoute); }}
+          onNavigateSearch={goToSearch}
+          onNavigateWatchlist={(watchlistId) => { setSelectedWatchlist(null); window.location.hash = '/watchlists'; setRoute('/watchlists'); void watchlistId; }}
+        />
+      );
+    }
+
+    if (route === '/profile/edit') {
+      return (
+        <EditProfilePage
+          user={profileData?.user || user}
+          onCancel={goToProfile}
+          onSaved={handleProfileSaved}
+        />
+      );
+    }
+
+    if (route === '/search') {
+      return <SearchPage onOpenMovie={handleMovieOpen} onOpenUser={goToUserProfile} />;
+    }
+
+    if (route.startsWith('/users/')) {
+      const targetUserId = route.match(/^\/users\/(\d+)$/)?.[1];
+      if (!targetUserId) return <main className="mx-auto max-w-5xl py-8"><div className="glass-panel rounded-[28px] p-6 text-slate-300">User not found.</div></main>;
+      return (
+        <PublicProfilePage
+          userId={targetUserId}
+          currentUser={user}
+          friends={friends}
+          pendingRequests={pendingRequests}
+          sentRequests={sentRequests}
+          onFriendAction={handleFriendAction}
+        />
+      );
+    }
+
     if (route === '/admin') {
       return (
         <div className="space-y-6 py-8">
@@ -1251,7 +1297,7 @@ function App() {
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                     <input value={movieSearch} onChange={(event) => setMovieSearch(event.target.value)} className="w-full rounded-full border border-slate-700 bg-slate-900/60 py-2 pl-9 pr-4 text-sm text-white outline-none focus:border-cyan-400/80 sm:w-56" placeholder="Search by title" />
                   </label>
-                  <button type="button" onClick={() => setMovieModalOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-sm font-semibold text-slate-950">
+                  <button type="button" onClick={() => { setEditingMovieId(null); setMovieForm({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', backdrop_url: '', trailer_url: '' }); setMovieModalOpen(true); }} className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-sm font-semibold text-slate-950">
                     <Plus className="h-4 w-4" /> Add New Movie
                   </button>
                 </div>
@@ -1307,8 +1353,15 @@ function App() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {genres.map((genre) => (
                     <div key={genre.genre_id} className="rounded-2xl border border-slate-700 bg-slate-900/40 p-3">
-                      <div className="flex items-center justify-between gap-2"><p className="font-semibold text-white">{genre.name}</p><div className="flex gap-2"><button type="button" onClick={() => editGenre(genre)} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={() => deleteGenre(genre.genre_id)} className="text-xs text-rose-300">Delete</button></div></div>
-                      <p className="mt-1 text-sm text-slate-400">{genre.description || 'No description provided'}</p>
+                      {editingGenreId === genre.genre_id ? (
+                        <form onSubmit={saveGenreEdit} className="space-y-3">
+                          <input value={editingGenreForm.name} onChange={(event) => setEditingGenreForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white" required />
+                          <textarea value={editingGenreForm.description} onChange={(event) => setEditingGenreForm((current) => ({ ...current, description: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white" rows="3" />
+                          <div className="flex gap-2"><button type="submit" className="rounded-full bg-cyan-400 px-3 py-1.5 text-xs font-semibold text-slate-950">Save</button><button type="button" onClick={() => setEditingGenreId(null)} className="rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300">Cancel</button></div>
+                        </form>
+                      ) : (
+                        <><div className="flex items-center justify-between gap-2"><p className="font-semibold text-white">{genre.name}</p><div className="flex gap-2"><button type="button" onClick={() => editGenre(genre)} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={() => deleteGenre(genre.genre_id)} className="text-xs text-rose-300">Delete</button></div></div><p className="mt-1 text-sm text-slate-400">{genre.description || 'No description provided'}</p></>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1363,6 +1416,7 @@ function App() {
                   <label><span className="mb-1 block text-sm text-slate-300">Language</span><input value={movieForm.language} onChange={(event) => setMovieForm((current) => ({ ...current, language: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" /></label>
                   <label><span className="mb-1 block text-sm text-slate-300">Rating</span><input type="number" step="0.1" value={movieForm.rating} onChange={(event) => setMovieForm((current) => ({ ...current, rating: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" /></label>
                   <label className="sm:col-span-2"><span className="mb-1 block text-sm text-slate-300">Poster URL</span><input type="url" value={movieForm.poster_url} onChange={(event) => setMovieForm((current) => ({ ...current, poster_url: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" /></label>
+                  <label className="sm:col-span-2"><span className="mb-1 block text-sm text-slate-300">Backdrop URL</span><input type="url" value={movieForm.backdrop_url} onChange={(event) => setMovieForm((current) => ({ ...current, backdrop_url: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" /></label>
                   <label className="sm:col-span-2"><span className="mb-1 block text-sm text-slate-300">Trailer URL</span><input type="url" value={movieForm.trailer_url} onChange={(event) => setMovieForm((current) => ({ ...current, trailer_url: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-white" /></label>
                 </div>
                 <button type="submit" disabled={movieSubmitting} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60">{movieSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />} {movieSubmitting ? 'Saving...' : editingMovieId ? 'Save Movie' : 'Create Movie'}</button>
@@ -1949,7 +2003,10 @@ function App() {
               <button type="button" onClick={goToWatchlists} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Watchlist' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Watchlist</button>
               <button type="button" onClick={() => goToDashboardTab('History')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'History' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>History</button>
               <button type="button" onClick={() => goToDashboardTab('Friends')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Friends' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Friends</button>
-              <button type="button" onClick={() => goToDashboardTab('Profile')} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${activeNav === 'Dashboard' ? 'border-cyan-400/80 bg-cyan-400 text-slate-950 hover:bg-cyan-300' : 'border-transparent bg-slate-100 text-slate-900 hover:bg-white'}`}><UserRound className="h-4 w-4" />{user ? user.name : 'Profile'}</button>
+              <button type="button" onClick={goToProfile} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${activeNav === 'Profile' ? 'border-cyan-400/80 bg-cyan-400 text-slate-950 hover:bg-cyan-300' : 'border-transparent bg-slate-100 text-slate-900 hover:bg-white'}`}>
+                {user?.profile_image ? <img src={user.profile_image} alt="" className="h-6 w-6 rounded-full object-cover" /> : <UserRound className="h-4 w-4" />}
+                {user ? (user.display_name || user.name) : 'Profile'}
+              </button>
             </div>
           )}
 

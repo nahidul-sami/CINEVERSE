@@ -276,6 +276,10 @@ exports.addMovieImage = async (req, res) => {
 exports.deleteMovie = async (req, res) => {
     const { id } = req.params;
 
+    if (!Number.isInteger(Number(id)) || Number(id) < 1) {
+        return res.status(400).json({ message: "Valid movie ID is required" });
+    }
+
     try {
         const result = await pool.query(
             "DELETE FROM movies WHERE movie_id = $1 RETURNING movie_id",
@@ -296,7 +300,10 @@ exports.deleteMovie = async (req, res) => {
 exports.updateMovie = async (req, res) => {
     const { id } = req.params;
     const { title, description, release_year, duration, language, rating, poster_url, backdrop_url, trailer_url } = req.body;
-    if (!title || !title.trim() || !description || !description.trim()) {
+    if (!Number.isInteger(Number(id)) || Number(id) < 1) {
+        return res.status(400).json({ message: "Valid movie ID is required" });
+    }
+    if (typeof title !== "string" || !title.trim() || typeof description !== "string" || !description.trim()) {
         return res.status(400).json({ message: "Title and description are required" });
     }
 
@@ -308,7 +315,7 @@ exports.updateMovie = async (req, res) => {
              WHERE movie_id = $10
              RETURNING *`,
             [title.trim(), description.trim(), release_year || null, duration || null, language || null,
-                rating || null, poster_url || null, backdrop_url || null, trailer_url || null, id]
+                rating ?? null, poster_url || null, backdrop_url || null, trailer_url || null, id]
         );
         if (!result.rows.length) return res.status(404).json({ message: "Movie not found" });
         res.status(200).json({ message: "Movie updated successfully", movie: result.rows[0] });

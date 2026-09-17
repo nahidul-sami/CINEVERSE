@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpenText, MessageSquareText, Sparkles, UserPlus, Users } from 'lucide-react';
-import { friendshipApi, userApi } from '../api/api';
+import { BookOpenText, MessageSquareText, UserPlus, Users } from 'lucide-react';
+import { userApi } from '../api/api';
 
 const normalizeImage = (value) => {
   if (!value) return null;

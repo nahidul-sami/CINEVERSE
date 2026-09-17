@@ -10,6 +10,10 @@
 CREATE TABLE users (
     user_id SERIAL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
+    username VARCHAR(80) UNIQUE NOT NULL,
+    display_name VARCHAR(150),
+    bio TEXT DEFAULT '',
+    profile_image TEXT,
     email VARCHAR(150) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'user',

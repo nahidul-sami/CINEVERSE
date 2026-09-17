@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, UserRound, MovieIcon } from 'lucide-react';
+import { Search, UserRound } from 'lucide-react';
 import { movieApi, userApi } from '../api/api';
 
 const normalizeImage = (value) => {
@@ -36,8 +36,6 @@ function SearchPage({ onOpenMovie, onOpenUser }) {
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed) {
-      setMovies([]);
-      setUsers([]);
       return undefined;
     }
 

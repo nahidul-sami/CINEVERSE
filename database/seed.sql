@@ -7,12 +7,12 @@
 -- 1. USERS
 -- =========================================================
 
-INSERT INTO users (name, email, password, role)
+INSERT INTO users (name, username, display_name, email, password, role)
 VALUES
-('Admin User', 'admin@cineverse.com', '$2b$10$X3v/jrF/OCVMA3Uc2wfMk.1/D2TWaUfmzZkJd/fgzQ3OjyCXmUGzS', 'admin'),
-('Omi', 'omi@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user'),
-('Rahim', 'rahim@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user'),
-('Karim', 'karim@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user');
+('Admin User', 'admin', 'Admin User', 'admin@cineverse.com', '$2b$10$X3v/jrF/OCVMA3Uc2wfMk.1/D2TWaUfmzZkJd/fgzQ3OjyCXmUGS', 'admin'),
+('Omi', 'omi', 'Omi', 'omi@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user'),
+('Rahim', 'rahim', 'Rahim', 'rahim@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user'),
+('Karim', 'karim', 'Karim', 'karim@gmail.com', '$2b$10$5SWQGIEh.bqi.MTednIcnOlzrV1ursIEyn8dAVb15nrMoeYTHUUJi', 'user');
 
 
 -- =========================================================
@@ -305,7 +305,7 @@ VALUES
 
 
 -- admin
-INSERT INTO users (name, email, password, role) VALUES
-('Omi',  'omi21@gmail.com',  '$2b$10$SCQsvkDEb37lcsz49iofY.hSPuJRa/Pdal8.7jE7VSOTUIxJ8jZQS', 'admin'),
-('Sami', 'sami@gmail.com', '$2b$10$74dLGj.syQ3gpNwGTq.GaefzGgEQuDmuR5BYXT1A8BopZmAVj2.2C', 'admin')
+INSERT INTO users (name, username, display_name, email, password, role) VALUES
+('Omi',  'omi21', 'Omi', 'omi21@gmail.com',  '$2b$10$SCQsvkDEb37lcsz49iofY.hSPuJRa/Pdal8.7jE7VSOTUIxJ8jZQS', 'admin'),
+('Sami', 'sami', 'Sami', 'sami@gmail.com', '$2b$10$74dLGj.syQ3gpNwGTq.GaefzGgEQuDmuR5BYXT1A8BopZmAVj2.2C', 'admin')
 ON CONFLICT (email) DO NOTHING;

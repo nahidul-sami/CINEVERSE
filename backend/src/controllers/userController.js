@@ -104,7 +104,7 @@ exports.getOwnProfile = async (req, res) => {
         const stats = await getUserStats(req.user.user_id);
         const recentWatched = await getRecentWatched(req.user.user_id);
         const recentReviews = await getRecentReviews(req.user.user_id);
-        const publicWatchlists = await getUserWatchlists(req.user.user_id);
+        const watchlists = await getUserWatchlists(req.user.user_id);
 
         res.status(200).json({
             success: true,
@@ -112,7 +112,7 @@ exports.getOwnProfile = async (req, res) => {
             stats,
             recentWatched,
             recentReviews,
-            publicWatchlists,
+            watchlists,
         });
     } catch (error) {
         console.error("GET OWN PROFILE ERROR:", error);
