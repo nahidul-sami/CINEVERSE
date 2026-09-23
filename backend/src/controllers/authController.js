@@ -34,10 +34,10 @@ exports.registerUser = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        const newUser = await pool.query(
+        const newUser = await pool.withTransaction((client) => client.query(
             "INSERT INTO users (name, username, display_name, email, password, role) VALUES ($1, $4, $1, $2, $3, 'user') RETURNING user_id, name, username, display_name, bio, profile_image, email, role, created_at",
             [name, email, hashedPassword, `user_${Date.now()}`]
-        );
+        ));
 
         res.status(201).json({
             message: "User registered successfully!",
@@ -105,10 +105,10 @@ exports.loginUser = async (req, res) => {
 
 exports.logoutUser = async (req, res) => {
     try {
-        await pool.query(
+        await pool.withTransaction((client) => client.query(
             "INSERT INTO revoked_tokens (token_jti, expires_at) VALUES ($1, TO_TIMESTAMP($2)) ON CONFLICT DO NOTHING",
             [req.user.jti, req.user.exp]
-        );
+        ));
 
         res.status(200).json({ message: "Logout successful" });
     } catch (error) {
@@ -143,10 +143,10 @@ const updateProfile = async (req, res) => {
     }
 
     try {
-        const updatedUser = await pool.query(
+        const updatedUser = await pool.withTransaction((client) => client.query(
             "UPDATE users SET name = $1 WHERE user_id = $2 RETURNING user_id, name, username, display_name, bio, profile_image, email, role, created_at",
             [name, req.user.user_id]
-        );
+        ));
         if (updatedUser.rows.length === 0) {
             return res.status(404).json({ message: "User not found" });
         }
@@ -157,10 +157,25 @@ const updateProfile = async (req, res) => {
     }
 };
 
+const getEngagementScore = async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT get_user_engagement_score($1) AS score",
+            [req.user.user_id]
+        );
+
+        res.status(200).json({ score: result.rows[0].score });
+    } catch (error) {
+        console.error("GET ENGAGEMENT SCORE ERROR:", error);
+        res.status(500).json({ message: "Server error while calculating engagement score", error: error.message });
+    }
+};
+
 module.exports = {
     registerUser: exports.registerUser,
     loginUser: exports.loginUser,
     logoutUser: exports.logoutUser,
     getProfile,
-    updateProfile
+    updateProfile,
+    getEngagementScore
 };

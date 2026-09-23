@@ -58,10 +58,10 @@ exports.createWatchlist = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "INSERT INTO watchlist (user_id, name) VALUES ($1, $2) RETURNING *",
             [req.user.user_id, name.trim()]
-        );
+        ));
 
         res.status(201).json({ message: "Watchlist created successfully", watchlist: result.rows[0] });
     } catch (error) {
@@ -79,10 +79,10 @@ exports.updateWatchlist = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "UPDATE watchlist SET name = $1 WHERE watchlist_id = $2 AND user_id = $3 RETURNING *",
             [name.trim(), id, req.user.user_id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Watchlist not found" });
@@ -99,10 +99,10 @@ exports.deleteWatchlist = async (req, res) => {
     const { id } = req.params;
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "DELETE FROM watchlist WHERE watchlist_id = $1 AND user_id = $2 RETURNING watchlist_id",
             [id, req.user.user_id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Watchlist not found" });
@@ -124,27 +124,31 @@ exports.addMovieToWatchlist = async (req, res) => {
     }
 
     try {
-        const watchlist = await pool.query(
-            "SELECT watchlist_id FROM watchlist WHERE watchlist_id = $1 AND user_id = $2",
-            [id, req.user.user_id]
-        );
+        const result = await pool.withTransaction(async (client) => {
+            const watchlist = await client.query(
+                "SELECT watchlist_id FROM watchlist WHERE watchlist_id = $1 AND user_id = $2",
+                [id, req.user.user_id]
+            );
+            if (watchlist.rows.length === 0) return { notFound: "watchlist" };
 
-        if (watchlist.rows.length === 0) {
+            const movie = await client.query("SELECT movie_id FROM movies WHERE movie_id = $1", [movie_id]);
+            if (movie.rows.length === 0) return { notFound: "movie" };
+
+            return client.query(
+                `INSERT INTO watchlist_items (watchlist_id, movie_id)
+                 VALUES ($1, $2)
+                 ON CONFLICT (watchlist_id, movie_id) DO NOTHING
+                 RETURNING *`,
+                [id, movie_id]
+            );
+        });
+
+        if (result.notFound === "watchlist") {
             return res.status(404).json({ message: "Watchlist not found" });
         }
-
-        const movie = await pool.query("SELECT movie_id FROM movies WHERE movie_id = $1", [movie_id]);
-        if (movie.rows.length === 0) {
+        if (result.notFound === "movie") {
             return res.status(404).json({ message: "Movie not found" });
         }
-
-        const result = await pool.query(
-            `INSERT INTO watchlist_items (watchlist_id, movie_id)
-             VALUES ($1, $2)
-             ON CONFLICT (watchlist_id, movie_id) DO NOTHING
-             RETURNING *`,
-            [id, movie_id]
-        );
 
         if (result.rows.length === 0) {
             return res.status(409).json({ message: "Movie is already in this watchlist" });
@@ -161,7 +165,7 @@ exports.removeMovieFromWatchlist = async (req, res) => {
     const { id, movieId } = req.params;
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `DELETE FROM watchlist_items wi
              USING watchlist w
              WHERE wi.watchlist_id = w.watchlist_id
@@ -170,7 +174,7 @@ exports.removeMovieFromWatchlist = async (req, res) => {
                AND w.user_id = $3
              RETURNING wi.items_id`,
             [id, movieId, req.user.user_id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Movie not found in watchlist" });
@@ -195,44 +199,55 @@ exports.shareWatchlist = async (req, res) => {
         return res.status(400).json({ message: "You cannot share a watchlist with yourself" });
     }
 
+    const client = await pool.connect();
     try {
-        const watchlist = await pool.query(
+        await client.query("BEGIN");
+
+        const watchlist = await client.query(
             "SELECT watchlist_id FROM watchlist WHERE watchlist_id = $1 AND user_id = $2",
             [id, req.user.user_id]
         );
 
         if (watchlist.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({ message: "Watchlist not found" });
         }
 
-        const recipient = await pool.query("SELECT user_id FROM users WHERE user_id = $1", [shared_with]);
+        const recipient = await client.query("SELECT user_id FROM users WHERE user_id = $1", [shared_with]);
         if (recipient.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({ message: "User not found" });
         }
 
-        const existing = await pool.query(
+        const existing = await client.query(
             "SELECT share_id FROM watchlist_share WHERE watchlist_id = $1 AND shared_with = $2",
             [id, shared_with]
         );
 
         if (existing.rows.length > 0) {
+            await client.query("ROLLBACK");
             return res.status(409).json({ message: "Already shared with this user" });
         }
 
-        const result = await pool.query(
+        const result = await client.query(
             "INSERT INTO watchlist_share (watchlist_id, shared_by, shared_with) VALUES ($1, $2, $3) RETURNING *",
             [id, req.user.user_id, shared_with]
         );
 
-        await pool.query(
+        await client.query(
             "INSERT INTO notifications (user_id, notification_type, share_id) VALUES ($1, 'watchlist_share', $2)",
             [shared_with, result.rows[0].share_id]
         );
 
+        await client.query("COMMIT");
+
         res.status(201).json({ message: "Watchlist shared successfully", share: result.rows[0] });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("SHARE WATCHLIST ERROR:", error);
         res.status(500).json({ message: "Server error while sharing watchlist", error: error.message });
+    } finally {
+        client.release();
     }
 };
 

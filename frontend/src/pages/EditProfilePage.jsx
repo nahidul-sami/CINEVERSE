@@ -33,6 +33,7 @@ function EditProfilePage({ user, onCancel, onSaved }) {
     bio: user?.bio || '',
   });
   const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -91,13 +92,13 @@ function EditProfilePage({ user, onCancel, onSaved }) {
         <form onSubmit={handleSave} className="space-y-6">
           <div className="flex flex-col items-center gap-5 rounded-2xl border border-slate-800 bg-slate-900/40 p-5 sm:flex-row sm:items-center">
             <div className="relative h-24 w-24 overflow-hidden rounded-full border border-cyan-400/40 bg-slate-900">
-              <img src={user?.profile_image ? normalizeImage(user.profile_image) : getDefaultAvatar(user)} alt="Profile" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.src = getDefaultAvatar(user); }} />
+              <img src={previewUrl || (user?.profile_image ? normalizeImage(user.profile_image) : getDefaultAvatar(user))} alt="Profile" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.src = getDefaultAvatar(user); }} />
             </div>
             <div className="flex flex-wrap gap-3">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-slate-950">
                 <Camera className="h-4 w-4" />
                 Upload photo
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => { const nextFile = event.target.files?.[0] || null; setFile(nextFile); setPreviewUrl(nextFile ? URL.createObjectURL(nextFile) : null); }} />
               </label>
               <button type="button" onClick={handleRemovePicture} className="rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2.5 text-sm text-slate-200 hover:border-rose-400/70 hover:text-rose-200">Remove</button>
             </div>

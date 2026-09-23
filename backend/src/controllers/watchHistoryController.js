@@ -31,19 +31,23 @@ exports.addToWatchHistory = async (req, res) => {
     }
 
     try {
-        const movie = await pool.query("SELECT movie_id FROM movies WHERE movie_id = $1", [movie_id]);
-        if (movie.rows.length === 0) {
+        const result = await pool.withTransaction(async (client) => {
+            const movie = await client.query("SELECT movie_id FROM movies WHERE movie_id = $1", [movie_id]);
+            if (movie.rows.length === 0) return null;
+
+            return client.query(
+                `INSERT INTO watch_history (user_id, movie_id, progress)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (user_id, movie_id)
+                 DO UPDATE SET progress = EXCLUDED.progress, watched_at = CURRENT_TIMESTAMP
+                 RETURNING *`,
+                [req.user.user_id, movie_id, progress ?? null]
+            );
+        });
+
+        if (!result) {
             return res.status(404).json({ message: "Movie not found" });
         }
-
-        const result = await pool.query(
-            `INSERT INTO watch_history (user_id, movie_id, progress)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id, movie_id)
-             DO UPDATE SET progress = EXCLUDED.progress, watched_at = CURRENT_TIMESTAMP
-             RETURNING *`,
-            [req.user.user_id, movie_id, progress ?? null]
-        );
 
         res.status(200).json({ message: "Watch history updated", history: result.rows[0] });
     } catch (error) {
@@ -61,13 +65,13 @@ exports.updateWatchProgress = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `UPDATE watch_history
              SET progress = $1, watched_at = CURRENT_TIMESTAMP
              WHERE history_id = $2 AND user_id = $3
              RETURNING *`,
             [progress, id, req.user.user_id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Watch history item not found" });
@@ -84,10 +88,10 @@ exports.deleteFromWatchHistory = async (req, res) => {
     const { id } = req.params;
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "DELETE FROM watch_history WHERE history_id = $1 AND user_id = $2 RETURNING history_id",
             [id, req.user.user_id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Watch history item not found" });

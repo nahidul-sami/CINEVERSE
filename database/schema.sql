@@ -316,6 +316,9 @@ CREATE TABLE notifications (
     notification_id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
     share_id INT,
+    notification_type VARCHAR(30) NOT NULL DEFAULT 'watchlist_share',
+    friendship_id INT,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_notification_user
@@ -326,5 +329,36 @@ CREATE TABLE notifications (
     CONSTRAINT fk_notification_share
         FOREIGN KEY (share_id)
         REFERENCES watchlist_share(share_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_notification_friendship
+        FOREIGN KEY (friendship_id)
+        REFERENCES friendships(friendship_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT chk_notification_type
+        CHECK (
+            (notification_type = 'watchlist_share' AND share_id IS NOT NULL AND friendship_id IS NULL)
+            OR (notification_type IN ('friend_request', 'friend_accepted') AND friendship_id IS NOT NULL AND share_id IS NULL)
+        )
+);
+
+
+-- =========================================================
+-- 16. MOVIE_IMAGES
+-- =========================================================
+
+CREATE TABLE movie_images (
+    image_id SERIAL PRIMARY KEY,
+    movie_id INT NOT NULL,
+    image_url TEXT NOT NULL,
+    image_type VARCHAR(20) NOT NULL DEFAULT 'gallery',
+
+    CONSTRAINT chk_movie_image_type
+        CHECK (image_type IN ('gallery', 'backdrop')),
+
+    CONSTRAINT fk_movie_images_movie
+        FOREIGN KEY (movie_id)
+        REFERENCES movies(movie_id)
         ON DELETE CASCADE
 );

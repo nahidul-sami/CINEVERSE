@@ -63,54 +63,56 @@ async function backfillOneMovie(movie) {
     }
 
     try {
-        if (needsBackdrop) {
-            const detail = await tmdbGet(`/movie/${tmdbId}`);
-            if (detail.backdrop_path) {
-                await pool.query("UPDATE movies SET backdrop_url = $1 WHERE movie_id = $2", [
+        await pool.withTransaction(async (client) => {
+            if (needsBackdrop) {
+                const detail = await tmdbGet(`/movie/${tmdbId}`);
+                if (detail.backdrop_path) {
+                    await client.query("UPDATE movies SET backdrop_url = $1 WHERE movie_id = $2", [
                     `${IMG_BASE}${detail.backdrop_path}`,
                     movie.movie_id,
-                ]);
-                console.log(`  Backdrop added for "${movie.title}"`);
+                    ]);
+                    console.log(`  Backdrop added for "${movie.title}"`);
+                }
             }
-        }
 
-        if (needsGallery) {
-            const imagesData = await tmdbGet(`/movie/${tmdbId}/images`);
-            const shots = (imagesData.backdrops || []).slice(0, 6);
-            for (const img of shots) {
-                await pool.query(
+            if (needsGallery) {
+                const imagesData = await tmdbGet(`/movie/${tmdbId}/images`);
+                const shots = (imagesData.backdrops || []).slice(0, 6);
+                for (const img of shots) {
+                    await client.query(
                     "INSERT INTO movie_images (movie_id, image_url, image_type) VALUES ($1, $2, 'gallery')",
                     [movie.movie_id, `${IMG_BASE}${img.file_path}`]
-                );
+                    );
+                }
+                if (shots.length > 0) console.log(`  ${shots.length} gallery images added for "${movie.title}"`);
             }
-            if (shots.length > 0) console.log(`  ${shots.length} gallery images added for "${movie.title}"`);
-        }
 
-        if (needsStreaming) {
-            const providersData = await tmdbGet(`/movie/${tmdbId}/watch/providers`);
-            const usProviders = providersData.results?.US?.flatrate || [];
-            for (const provider of usProviders.slice(0, 5)) {
-                const existingPlatform = await pool.query(
+            if (needsStreaming) {
+                const providersData = await tmdbGet(`/movie/${tmdbId}/watch/providers`);
+                const usProviders = providersData.results?.US?.flatrate || [];
+                for (const provider of usProviders.slice(0, 5)) {
+                    const existingPlatform = await client.query(
                     "SELECT platform_id FROM streaming_platforms WHERE name = $1",
                     [provider.provider_name]
-                );
-                let platformId;
-                if (existingPlatform.rows.length > 0) {
-                    platformId = existingPlatform.rows[0].platform_id;
-                } else {
-                    const inserted = await pool.query(
+                    );
+                    let platformId;
+                    if (existingPlatform.rows.length > 0) {
+                        platformId = existingPlatform.rows[0].platform_id;
+                    } else {
+                        const inserted = await client.query(
                         "INSERT INTO streaming_platforms (name, logo_url, country, subscription_type) VALUES ($1, $2, 'US', 'subscription') RETURNING platform_id",
                         [provider.provider_name, provider.logo_path ? `${IMG_BASE}${provider.logo_path}` : null]
+                        );
+                        platformId = inserted.rows[0].platform_id;
+                    }
+                    await client.query(
+                        "INSERT INTO movie_streaming (movie_id, platform_id) VALUES ($1, $2) ON CONFLICT (movie_id, platform_id) DO NOTHING",
+                        [movie.movie_id, platformId]
                     );
-                    platformId = inserted.rows[0].platform_id;
                 }
-                await pool.query(
-                    "INSERT INTO movie_streaming (movie_id, platform_id) VALUES ($1, $2) ON CONFLICT (movie_id, platform_id) DO NOTHING",
-                    [movie.movie_id, platformId]
-                );
+                if (usProviders.length > 0) console.log(`  Streaming platforms added for "${movie.title}"`);
             }
-            if (usProviders.length > 0) console.log(`  Streaming platforms added for "${movie.title}"`);
-        }
+        });
     } catch (err) {
         console.error(`  Failed enriching "${movie.title}":`, err.message);
     }

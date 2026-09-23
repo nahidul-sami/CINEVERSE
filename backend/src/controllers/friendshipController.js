@@ -11,13 +11,17 @@ exports.sendFriendRequest = async (req, res) => {
         return res.status(400).json({ message: "You cannot send a friend request to yourself" });
     }
 
+    const client = await pool.connect();
     try {
-        const friend = await pool.query("SELECT user_id FROM users WHERE user_id = $1", [friend_id]);
+        await client.query("BEGIN");
+
+        const friend = await client.query("SELECT user_id FROM users WHERE user_id = $1", [friend_id]);
         if (friend.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({ message: "User not found" });
         }
 
-        const existing = await pool.query(
+        const existing = await client.query(
             `SELECT friendship_id
              FROM friendships
              WHERE ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1))
@@ -26,23 +30,29 @@ exports.sendFriendRequest = async (req, res) => {
         );
 
         if (existing.rows.length > 0) {
+            await client.query("ROLLBACK");
             return res.status(409).json({ message: "Friend request already exists or you are already friends" });
         }
 
-        const result = await pool.query(
+        const result = await client.query(
             "INSERT INTO friendships (user_id, friend_id, status) VALUES ($1, $2, 'pending') RETURNING *",
             [req.user.user_id, friend_id]
         );
 
-        await pool.query(
+        await client.query(
             "INSERT INTO notifications (user_id, notification_type, friendship_id) VALUES ($1, 'friend_request', $2)",
             [friend_id, result.rows[0].friendship_id]
         );
 
+        await client.query("COMMIT");
+
         res.status(201).json({ message: "Friend request sent successfully", friendship: result.rows[0] });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("SEND FRIEND REQUEST ERROR:", error);
         res.status(500).json({ message: "Server error while sending friend request", error: error.message });
+    } finally {
+        client.release();
     }
 };
 
@@ -54,38 +64,48 @@ exports.respondToFriendRequest = async (req, res) => {
         return res.status(400).json({ message: "Status must be accepted or rejected" });
     }
 
+    const client = await pool.connect();
     try {
-        const friendship = await pool.query("SELECT * FROM friendships WHERE friendship_id = $1", [id]);
+        await client.query("BEGIN");
+        const friendship = await client.query("SELECT * FROM friendships WHERE friendship_id = $1", [id]);
 
         if (friendship.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({ message: "Friend request not found" });
         }
 
         const row = friendship.rows[0];
         if (Number(row.friend_id) !== Number(req.user.user_id)) {
+            await client.query("ROLLBACK");
             return res.status(403).json({ message: "Only the recipient can respond to this friend request" });
         }
 
         if (row.status !== 'pending') {
+            await client.query("ROLLBACK");
             return res.status(409).json({ message: "Friend request has already been answered" });
         }
 
-        const result = await pool.query(
+        const result = await client.query(
             "UPDATE friendships SET status = $1 WHERE friendship_id = $2 RETURNING *",
             [status, id]
         );
 
         if (status === 'accepted') {
-            await pool.query(
+            await client.query(
                 "INSERT INTO notifications (user_id, notification_type, friendship_id) VALUES ($1, 'friend_accepted', $2)",
                 [row.user_id, row.friendship_id]
             );
         }
 
+        await client.query("COMMIT");
+
         res.status(200).json({ message: "Friend request updated successfully", friendship: result.rows[0] });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("RESPOND TO FRIEND REQUEST ERROR:", error);
         res.status(500).json({ message: "Server error while responding to friend request", error: error.message });
+    } finally {
+        client.release();
     }
 };
 
@@ -149,20 +169,27 @@ exports.getSentRequests = async (req, res) => {
 exports.removeFriend = async (req, res) => {
     const { id } = req.params;
 
+    const client = await pool.connect();
     try {
-        const result = await pool.query(
+        await client.query("BEGIN");
+        const result = await client.query(
             "DELETE FROM friendships WHERE friendship_id = $1 AND (user_id = $2 OR friend_id = $2) RETURNING friendship_id",
             [id, req.user.user_id]
         );
 
         if (result.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({ message: "Friendship not found" });
         }
 
+        await client.query("COMMIT");
         res.status(200).json({ message: "Friendship removed successfully" });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("REMOVE FRIEND ERROR:", error);
         res.status(500).json({ message: "Server error while removing friendship", error: error.message });
+    } finally {
+        client.release();
     }
 };
 

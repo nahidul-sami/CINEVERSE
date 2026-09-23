@@ -1,18 +1,5 @@
 const pool = require("../config/db");
 
-const refreshMovieAverage = async (client, movieId) => {
-    await client.query(
-        `UPDATE movies
-         SET average_rating = (
-             SELECT ROUND(AVG(rating), 2)
-             FROM reviews
-             WHERE movie_id = $1
-         )
-         WHERE movie_id = $1`,
-        [movieId]
-    );
-};
-
 exports.getMovieReviews = async (req, res) => {
     const { movieId } = req.params;
 
@@ -71,7 +58,6 @@ exports.createReview = async (req, res) => {
              RETURNING *`,
             [movie_id, req.user.user_id, rating, review_text.trim()]
         );
-        await refreshMovieAverage(client, movie_id);
         await client.query("COMMIT");
 
         res.status(201).json({ message: "Review added successfully", review: result.rows[0] });
@@ -119,7 +105,6 @@ exports.updateReview = async (req, res) => {
             await client.query("ROLLBACK");
             return res.status(404).json({ message: "Review not found" });
         }
-        await refreshMovieAverage(client, result.rows[0].movie_id);
         await client.query("COMMIT");
 
         res.status(200).json({ message: "Review updated successfully", review: result.rows[0] });
@@ -147,7 +132,6 @@ exports.deleteReview = async (req, res) => {
             await client.query("ROLLBACK");
             return res.status(404).json({ message: "Review not found" });
         }
-        await refreshMovieAverage(client, result.rows[0].movie_id);
         await client.query("COMMIT");
 
         res.status(200).json({ message: "Review deleted successfully" });

@@ -56,6 +56,12 @@ const getHashRoute = () => {
 
 const toDisplayNumber = (value) => Number(value ?? 0).toFixed(1);
 
+const normalizeImage = (value) => {
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:')) return value;
+  return `http://localhost:5000${value.startsWith('/') ? value : `/${value}`}`;
+};
+
 const timeAgo = (dateString) => {
   const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
   if (Number.isNaN(seconds) || seconds < 60) return 'just now';
@@ -121,6 +127,8 @@ function App() {
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState({ movies: false, detail: false, profile: false, history: false, watchlists: false, friends: false, page: true });
   const [friendEmail, setFriendEmail] = useState('');
+  const [friendSuggestions, setFriendSuggestions] = useState([]);
+  const [selectedFriend, setSelectedFriend] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -145,6 +153,10 @@ function App() {
   const [movieSubmitting, setMovieSubmitting] = useState(false);
   const [deleteMovieId, setDeleteMovieId] = useState(null);
   const [assignMovie, setAssignMovie] = useState(null);
+  const [associationMovie, setAssociationMovie] = useState(null);
+  const [associationGenreId, setAssociationGenreId] = useState('');
+  const [associationPlatformId, setAssociationPlatformId] = useState('');
+  const [associationPlatformUrl, setAssociationPlatformUrl] = useState('');
   const [people, setPeople] = useState([]);
   const [creditSubmitting, setCreditSubmitting] = useState(false);
   const [trailerOpen, setTrailerOpen] = useState(false);
@@ -253,6 +265,28 @@ function App() {
   }, [searchTerm]);
 
   useEffect(() => {
+    const query = friendEmail.trim();
+    if (query.length < 2 || selectedFriend) {
+      return undefined;
+    }
+
+    let ignore = false;
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await userApi.search({ q: query, limit: 6 });
+        if (!ignore) setFriendSuggestions((response.data?.users || []).filter((candidate) => Number(candidate.user_id) !== Number(user?.user_id)));
+      } catch {
+        if (!ignore) setFriendSuggestions([]);
+      }
+    }, 250);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timeout);
+    };
+  }, [friendEmail, selectedFriend, user?.user_id]);
+
+  useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       const scrollingDown = currentScrollY > lastScrollY.current;
@@ -309,11 +343,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const autoRoute = route === '/login' || route === '/register' ? route : route === '/admin' && user?.role !== 'admin' ? '/login' : route === '/' && user?.role === 'admin' ? '/admin' : route;
+    const isPublicRoute = route === '/' || route === '/login' || route === '/register';
+    const autoRoute = !token && !isPublicRoute
+      ? '/login'
+      : route === '/admin' && user?.role !== 'admin'
+        ? '/login'
+        : route === '/' && user?.role === 'admin'
+          ? '/admin'
+          : route;
     if (autoRoute !== route) {
       window.location.hash = autoRoute;
     }
-  }, [route, user]);
+  }, [route, token, user]);
 
   useEffect(() => {
     if (!token) return;
@@ -828,15 +869,16 @@ function App() {
 
   const sendFriendRequest = async (event) => {
     event.preventDefault();
-    if (!friendEmail.trim()) {
-      showToast('Enter a friend email address', 'error');
+    if (!selectedFriend) {
+      showToast('Choose a person from the suggestions', 'error');
       return;
     }
 
     try {
-      const lookup = await friendshipApi.lookupUserByEmail(friendEmail.trim());
-      await friendshipApi.sendRequest({ friend_id: lookup.data?.user?.user_id });
+      await friendshipApi.sendRequest({ friend_id: selectedFriend.user_id });
       setFriendEmail('');
+      setSelectedFriend(null);
+      setFriendSuggestions([]);
       showToast('Friend request sent');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Could not send friend request', 'error');
@@ -889,10 +931,10 @@ function App() {
       const payload = {
         title: movieForm.title,
         description: movieForm.description,
-        release_year: Number(movieForm.release_year),
-        duration: Number(movieForm.duration),
+        release_year: movieForm.release_year ? Number(movieForm.release_year) : null,
+        duration: movieForm.duration ? Number(movieForm.duration) : null,
         language: movieForm.language,
-        rating: Number(movieForm.rating),
+        rating: movieForm.rating ? Number(movieForm.rating) : null,
         poster_url: movieForm.poster_url,
         backdrop_url: movieForm.backdrop_url,
         trailer_url: movieForm.trailer_url,
@@ -959,6 +1001,89 @@ function App() {
       setAssignMovie((current) => ({ ...current, cast: movieResponse.data?.cast || [] }));
     } catch (error) {
       showToast(error?.response?.data?.message || 'Could not load people', 'error');
+    }
+  };
+
+  const openAssociationModal = async (movie) => {
+    setAssociationMovie({ ...movie, genres: [], streaming: [] });
+    setAssociationGenreId('');
+    setAssociationPlatformId('');
+    setAssociationPlatformUrl('');
+    try {
+      const [movieResponse, genresResponse, platformsResponse] = await Promise.all([
+        movieApi.getById(movie.movie_id),
+        genreApi.getAll(),
+        streamingPlatformApi.getAll(),
+      ]);
+      setGenres(genresResponse.data || []);
+      setPlatforms(platformsResponse.data?.platforms || []);
+      setAssociationMovie({
+        ...movieResponse.data.movie,
+        genres: movieResponse.data.genres || [],
+        streaming: movieResponse.data.streaming || [],
+      });
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not load movie associations', 'error');
+    }
+  };
+
+  const refreshAssociationMovie = async () => {
+    if (!associationMovie) return;
+    const response = await movieApi.getById(associationMovie.movie_id);
+    setAssociationMovie({
+      ...response.data.movie,
+      genres: response.data.genres || [],
+      streaming: response.data.streaming || [],
+    });
+  };
+
+  const attachGenreToMovie = async (event) => {
+    event.preventDefault();
+    if (!associationMovie || !associationGenreId) return;
+    try {
+      await genreApi.attachToMovie(associationMovie.movie_id, { genre_id: Number(associationGenreId) });
+      await refreshAssociationMovie();
+      setAssociationGenreId('');
+      showToast('Genre assigned to movie');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not assign genre', 'error');
+    }
+  };
+
+  const removeGenreFromMovie = async (genreId) => {
+    try {
+      await genreApi.removeFromMovie(associationMovie.movie_id, genreId);
+      await refreshAssociationMovie();
+      showToast('Genre removed from movie');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not remove genre', 'error');
+    }
+  };
+
+  const attachPlatformToMovie = async (event) => {
+    event.preventDefault();
+    if (!associationMovie || !associationPlatformId) return;
+    try {
+      await streamingPlatformApi.attachToMovie(associationMovie.movie_id, {
+        platform_id: Number(associationPlatformId),
+        url: associationPlatformUrl.trim() || null,
+      });
+      await refreshAssociationMovie();
+      setAssociationPlatformId('');
+      setAssociationPlatformUrl('');
+      showToast('Streaming platform assigned to movie');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not assign platform', 'error');
+    }
+  };
+
+  const removePlatformFromMovie = async (platformId) => {
+    try {
+      await streamingPlatformApi.removeFromMovie(associationMovie.movie_id, platformId);
+      await refreshAssociationMovie();
+      showToast('Streaming platform removed from movie');
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not remove platform', 'error');
     }
   };
 
@@ -1252,6 +1377,10 @@ function App() {
       );
     }
 
+    if (!token && route !== '/') {
+      return null;
+    }
+
     if (!token) {
       return (
         <Landing
@@ -1360,6 +1489,7 @@ function App() {
                           <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
                             <button type="button" onClick={() => handleMovieOpen(movieId)} className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-400/70"><MonitorPlay className="h-3.5 w-3.5" /> View</button>
                             <button type="button" onClick={() => editMovie(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Edit</button>
+                            <button type="button" onClick={() => openAssociationModal(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Genres & Platforms</button>
                             <button type="button" onClick={() => openAssignModal(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Assign Cast/Crew</button>
                             <button type="button" onClick={() => setDeleteMovieId(movieId)} className="inline-flex items-center gap-1 rounded-full border border-rose-400/40 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-400/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
                           </div></td>
@@ -1466,6 +1596,18 @@ function App() {
 
           {deleteGenreId !== null && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] border border-rose-400/30 bg-slate-900 p-6 shadow-2xl"><h3 className="text-xl font-bold text-white">Delete genre?</h3><p className="mt-2 text-slate-400">Are you sure you want to delete this genre?</p><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setDeleteGenreId(null)} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300">Cancel</button><button type="button" onClick={deleteGenre} className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Delete</button></div></div></div>
+          )}
+
+          {associationMovie && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+              <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[28px] border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+                <div className="mb-6 flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Movie relationships</p><h3 className="mt-1 text-2xl font-bold text-white">{associationMovie.title}</h3></div><button type="button" onClick={() => setAssociationMovie(null)} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white" aria-label="Close"><X className="h-5 w-5" /></button></div>
+                <div className="grid gap-6 md:grid-cols-2">
+                  <section className="rounded-2xl border border-slate-700 bg-slate-950/40 p-4"><h4 className="font-semibold text-white">Genres</h4><form onSubmit={attachGenreToMovie} className="mt-3 flex gap-2"><select value={associationGenreId} onChange={(event) => setAssociationGenreId(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Choose genre</option>{genres.filter((genre) => !(associationMovie.genres || []).some((item) => Number(item.genre_id) === Number(genre.genre_id))).map((genre) => <option key={genre.genre_id} value={genre.genre_id}>{genre.name}</option>)}</select><button type="submit" className="rounded-xl bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950">Add</button></form><div className="mt-4 flex flex-wrap gap-2">{associationMovie.genres?.length ? associationMovie.genres.map((genre) => <span key={genre.genre_id} className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-200">{genre.name}<button type="button" onClick={() => removeGenreFromMovie(genre.genre_id)} className="text-rose-300" aria-label={`Remove ${genre.name}`}>x</button></span>) : <p className="text-sm text-slate-500">No genres assigned.</p>}</div></section>
+                  <section className="rounded-2xl border border-slate-700 bg-slate-950/40 p-4"><h4 className="font-semibold text-white">Streaming platforms</h4><form onSubmit={attachPlatformToMovie} className="mt-3 space-y-2"><select value={associationPlatformId} onChange={(event) => setAssociationPlatformId(event.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Choose platform</option>{platforms.filter((platform) => !(associationMovie.streaming || []).some((item) => Number(item.platform_id) === Number(platform.platform_id))).map((platform) => <option key={platform.platform_id} value={platform.platform_id}>{platform.name}</option>)}</select><div className="flex gap-2"><input type="url" value={associationPlatformUrl} onChange={(event) => setAssociationPlatformUrl(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white" placeholder="Movie streaming URL" /><button type="submit" className="rounded-xl bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950">Add</button></div></form><div className="mt-4 space-y-2">{associationMovie.streaming?.length ? associationMovie.streaming.map((platform) => <div key={platform.platform_id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 px-3 py-2 text-sm"><span className="truncate text-slate-200">{platform.name}</span><button type="button" onClick={() => removePlatformFromMovie(platform.platform_id)} className="text-rose-300">Remove</button></div>) : <p className="text-sm text-slate-500">No platforms assigned.</p>}</div></section>
+                </div>
+              </div>
+            </div>
           )}
 
           {assignMovie && (
@@ -1936,7 +2078,7 @@ function App() {
                 <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
                   <h2 className="text-xl font-bold text-white">Add a friend</h2>
                   <form onSubmit={sendFriendRequest} className="mt-4 flex flex-col gap-3 sm:flex-row">
-                    <input type="email" value={friendEmail} onChange={(event) => setFriendEmail(event.target.value)} placeholder="Friend's email" className="min-w-0 flex-1 rounded-2xl border border-slate-700/80 bg-slate-900/45 px-3 py-2 text-sm text-white placeholder:text-slate-400 focus:border-cyan-400/80 focus:outline-none" />
+                    <div className="relative min-w-0 flex-1"><input type="text" value={friendEmail} onChange={(event) => { setFriendEmail(event.target.value); setSelectedFriend(null); }} placeholder="Search by name or username" className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/45 px-3 py-2 text-sm text-white placeholder:text-slate-400 focus:border-cyan-400/80 focus:outline-none" />{friendSuggestions.length > 0 && <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">{friendSuggestions.map((candidate) => <button key={candidate.user_id} type="button" onClick={() => { setSelectedFriend(candidate); setFriendEmail(candidate.display_name || candidate.name); setFriendSuggestions([]); }} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-800"><img src={normalizeImage(candidate.profile_image)} alt="" className="h-8 w-8 rounded-full object-cover" /><span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{candidate.display_name || candidate.name}</span><span className="block truncate text-xs text-slate-400">@{candidate.username || candidate.name}</span></span></button>)}</div>}</div>
                     <button type="submit" className="rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-sm font-semibold text-slate-950">Send request</button>
                   </form>
                 </div>
@@ -2053,7 +2195,7 @@ function App() {
               <button type="button" onClick={() => goToDashboardTab('History')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'History' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>History</button>
               <button type="button" onClick={() => goToDashboardTab('Friends')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Friends' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Friends</button>
               <button type="button" onClick={goToProfile} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${activeNav === 'Profile' ? 'border-cyan-400/80 bg-cyan-400 text-slate-950 hover:bg-cyan-300' : 'border-transparent bg-slate-100 text-slate-900 hover:bg-white'}`}>
-                {user?.profile_image ? <img src={user.profile_image} alt="" className="h-6 w-6 rounded-full object-cover" /> : <UserRound className="h-4 w-4" />}
+                    {user?.profile_image ? <img src={normalizeImage(user.profile_image)} alt="" className="h-6 w-6 rounded-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : <UserRound className="h-4 w-4" />}
                 {user ? (user.display_name || user.name) : 'Profile'}
               </button>
             </div>

@@ -39,16 +39,16 @@ async function tmdbGet(path, params = {}) {
 }
 
 // --- Genres: fetch TMDb's genre list, insert any missing ones into our `genres` table ---
-async function syncGenres() {
+async function syncGenres(client = pool) {
     const { genres } = await tmdbGet("/genre/movie/list");
     const nameToOurId = {};
 
     for (const g of genres) {
-        const existing = await pool.query("SELECT genre_id FROM genres WHERE name = $1", [g.name]);
+        const existing = await client.query("SELECT genre_id FROM genres WHERE name = $1", [g.name]);
         if (existing.rows.length > 0) {
             nameToOurId[g.id] = existing.rows[0].genre_id;
         } else {
-            const inserted = await pool.query(
+            const inserted = await client.query(
                 "INSERT INTO genres (name) VALUES ($1) RETURNING genre_id",
                 [g.name]
             );
@@ -59,11 +59,11 @@ async function syncGenres() {
 }
 
 // --- Person: find-or-create by name (person table has no unique constraint, so we check first) ---
-async function findOrCreatePerson(name, profileUrl, personType, birthDate = null, biography = null) {
-    const existing = await pool.query("SELECT person_id FROM person WHERE name = $1", [name]);
+async function findOrCreatePerson(name, profileUrl, personType, birthDate = null, biography = null, client = pool) {
+    const existing = await client.query("SELECT person_id FROM person WHERE name = $1", [name]);
     if (existing.rows.length > 0) return existing.rows[0].person_id;
 
-    const inserted = await pool.query(
+    const inserted = await client.query(
         `INSERT INTO person (name, birth_date, biography, profile_url, person_type)
          VALUES ($1, $2, $3, $4, $5) RETURNING person_id`,
         [name, birthDate, biography, profileUrl, personType]
@@ -72,8 +72,9 @@ async function findOrCreatePerson(name, profileUrl, personType, birthDate = null
 }
 
 async function seedMovie(tmdbMovie, genreMap) {
+    return pool.withTransaction(async (client) => {
     // Skip if a movie with this exact title already exists (keeps the script safely re-runnable)
-    const existing = await pool.query("SELECT movie_id FROM movies WHERE title = $1", [tmdbMovie.title]);
+    const existing = await client.query("SELECT movie_id FROM movies WHERE title = $1", [tmdbMovie.title]);
     if (existing.rows.length > 0) {
         console.log(`  Skipping "${tmdbMovie.title}" — already in database`);
         return;
@@ -90,7 +91,7 @@ async function seedMovie(tmdbMovie, genreMap) {
     const backdropUrl = detail.backdrop_path ? `${IMG_BASE}${detail.backdrop_path}` : null;
     const releaseYear = detail.release_date ? Number(detail.release_date.slice(0, 4)) : null;
 
-    const movieResult = await pool.query(
+    const movieResult = await client.query(
         `INSERT INTO movies (title, release_year, rating, language, trailer_url, poster_url, backdrop_url, description, duration)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING movie_id`,
@@ -113,7 +114,7 @@ async function seedMovie(tmdbMovie, genreMap) {
     for (const g of detail.genres || []) {
         const ourGenreId = genreMap[g.id];
         if (ourGenreId) {
-            await pool.query(
+            await client.query(
                 "INSERT INTO movie_genres (movie_id, genre_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 [movieId, ourGenreId]
             );
@@ -124,8 +125,8 @@ async function seedMovie(tmdbMovie, genreMap) {
     const topCast = (detail.credits?.cast || []).slice(0, 6);
     for (const actor of topCast) {
         const profileUrl = actor.profile_path ? `${IMG_BASE}${actor.profile_path}` : null;
-        const personId = await findOrCreatePerson(actor.name, profileUrl, "actor");
-        await pool.query(
+        const personId = await findOrCreatePerson(actor.name, profileUrl, "actor", null, null, client);
+        await client.query(
             `INSERT INTO movie_cast_crew (movie_id, person_id, credit_type, character_name)
              VALUES ($1, $2, 'actor', $3)
              ON CONFLICT DO NOTHING`,
@@ -137,8 +138,8 @@ async function seedMovie(tmdbMovie, genreMap) {
     const directors = (detail.credits?.crew || []).filter((c) => c.job === "Director");
     for (const director of directors) {
         const profileUrl = director.profile_path ? `${IMG_BASE}${director.profile_path}` : null;
-        const personId = await findOrCreatePerson(director.name, profileUrl, "director");
-        await pool.query(
+        const personId = await findOrCreatePerson(director.name, profileUrl, "director", null, null, client);
+        await client.query(
             `INSERT INTO movie_cast_crew (movie_id, person_id, credit_type, character_name)
              VALUES ($1, $2, 'director', NULL)
              ON CONFLICT DO NOTHING`,
@@ -151,7 +152,7 @@ async function seedMovie(tmdbMovie, genreMap) {
         const imagesData = await tmdbGet(`/movie/${tmdbMovie.id}/images`);
         const galleryShots = (imagesData.backdrops || []).slice(0, 6);
         for (const img of galleryShots) {
-            await pool.query(
+            await client.query(
                 `INSERT INTO movie_images (movie_id, image_url, image_type) VALUES ($1, $2, 'gallery')`,
                 [movieId, `${IMG_BASE}${img.file_path}`]
             );
@@ -165,7 +166,7 @@ async function seedMovie(tmdbMovie, genreMap) {
         const providersData = await tmdbGet(`/movie/${tmdbMovie.id}/watch/providers`);
         const usProviders = providersData.results?.US?.flatrate || [];
         for (const provider of usProviders.slice(0, 5)) {
-            const existingPlatform = await pool.query(
+            const existingPlatform = await client.query(
                 "SELECT platform_id FROM streaming_platforms WHERE name = $1",
                 [provider.provider_name]
             );
@@ -173,13 +174,13 @@ async function seedMovie(tmdbMovie, genreMap) {
             if (existingPlatform.rows.length > 0) {
                 platformId = existingPlatform.rows[0].platform_id;
             } else {
-                const inserted = await pool.query(
+                const inserted = await client.query(
                     `INSERT INTO streaming_platforms (name, logo_url, country, subscription_type) VALUES ($1, $2, 'US', 'subscription') RETURNING platform_id`,
                     [provider.provider_name, provider.logo_path ? `${IMG_BASE}${provider.logo_path}` : null]
                 );
                 platformId = inserted.rows[0].platform_id;
             }
-            await pool.query(
+            await client.query(
                 `INSERT INTO movie_streaming (movie_id, platform_id) VALUES ($1, $2) ON CONFLICT (movie_id, platform_id) DO NOTHING`,
                 [movieId, platformId]
             );
@@ -187,11 +188,12 @@ async function seedMovie(tmdbMovie, genreMap) {
     } catch (err) {
         console.log(`  Streaming platforms fetch failed for "${detail.title}": ${err.message}`);
     }
+    });
 }
 
 async function run() {
     console.log("Syncing genres from TMDb...");
-    const genreMap = await syncGenres();
+    const genreMap = await pool.withTransaction((client) => syncGenres(client));
     console.log(`  ${Object.keys(genreMap).length} genres synced.`);
 
     console.log(`Fetching top-rated movies from TMDb (target: ${TARGET_MOVIE_COUNT})...`);

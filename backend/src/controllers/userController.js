@@ -132,32 +132,37 @@ exports.updateOwnProfile = async (req, res) => {
     }
 
     try {
-        const current = await pool.query("SELECT user_id, username, name, display_name FROM users WHERE user_id = $1", [req.user.user_id]);
-        if (current.rows.length === 0) {
+        const updated = await pool.withTransaction(async (client) => {
+            const current = await client.query("SELECT user_id, username, name, display_name, bio FROM users WHERE user_id = $1", [req.user.user_id]);
+            if (current.rows.length === 0) return { notFound: true };
+
+            const safeName = nextName || current.rows[0].name;
+            const safeUsername = nextUsername || current.rows[0].username;
+            const safeDisplayName = nextDisplayName || current.rows[0].display_name || current.rows[0].name;
+
+            if (safeUsername && safeUsername !== current.rows[0].username) {
+                const duplicate = await client.query("SELECT user_id FROM users WHERE username = $1 AND user_id <> $2", [safeUsername, req.user.user_id]);
+                if (duplicate.rows.length > 0) return { duplicate: true };
+            }
+
+            return client.query(
+                `UPDATE users
+                 SET name = $1,
+                     username = $2,
+                     display_name = $3,
+                     bio = $4
+                 WHERE user_id = $5
+                 RETURNING ${safeUserFields}`,
+                [safeName, safeUsername, safeDisplayName, nextBio, req.user.user_id]
+            );
+        });
+
+        if (updated.notFound) {
             return res.status(404).json({ message: "User not found" });
         }
-
-        const safeName = nextName || current.rows[0].name;
-        const safeUsername = nextUsername || current.rows[0].username;
-        const safeDisplayName = nextDisplayName || current.rows[0].display_name || current.rows[0].name;
-
-        if (safeUsername && safeUsername !== current.rows[0].username) {
-            const duplicate = await pool.query("SELECT user_id FROM users WHERE username = $1 AND user_id <> $2", [safeUsername, req.user.user_id]);
-            if (duplicate.rows.length > 0) {
-                return res.status(409).json({ message: "This username is already taken" });
-            }
+        if (updated.duplicate) {
+            return res.status(409).json({ message: "This username is already taken" });
         }
-
-        const updated = await pool.query(
-            `UPDATE users
-             SET name = $1,
-                 username = $2,
-                 display_name = $3,
-                 bio = $4
-             WHERE user_id = $5
-             RETURNING ${safeUserFields}`,
-            [safeName, safeUsername, safeDisplayName, nextBio !== undefined ? nextBio : current.rows[0].bio || "", req.user.user_id]
-        );
 
         res.status(200).json({
             success: true,
@@ -273,13 +278,13 @@ exports.uploadProfilePicture = async (req, res) => {
     const relativePath = `/uploads/profile/${path.basename(file.path)}`;
 
     try {
-        const updated = await pool.query(
+        const updated = await pool.withTransaction((client) => client.query(
             `UPDATE users
              SET profile_image = $1
              WHERE user_id = $2
              RETURNING ${safeUserFields}`,
             [relativePath, req.user.user_id]
-        );
+        ));
 
         if (updated.rows.length === 0) {
             if (fs.existsSync(file.path)) {
@@ -304,13 +309,13 @@ exports.uploadProfilePicture = async (req, res) => {
 
 exports.removeProfilePicture = async (req, res) => {
     try {
-        const updated = await pool.query(
+        const updated = await pool.withTransaction((client) => client.query(
             `UPDATE users
              SET profile_image = NULL
              WHERE user_id = $1
              RETURNING ${safeUserFields}`,
             [req.user.user_id]
-        );
+        ));
 
         if (updated.rows.length === 0) {
             return res.status(404).json({ message: "User not found" });

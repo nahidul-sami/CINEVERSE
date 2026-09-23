@@ -37,11 +37,12 @@ const upload = multer({
     },
 });
 
+router.use(verifyToken);
 router.get("/search", searchUsers);
-router.get("/profile", verifyToken, getOwnProfile);
-router.put("/profile", verifyToken, updateOwnProfile);
-router.post("/profile-picture", verifyToken, upload.single("profile_image"), uploadProfilePicture);
-router.delete("/profile-picture", verifyToken, removeProfilePicture);
+router.get("/profile", getOwnProfile);
+router.put("/profile", updateOwnProfile);
+router.post("/profile-picture", upload.single("profile_image"), uploadProfilePicture);
+router.delete("/profile-picture", removeProfilePicture);
 router.get("/:userId", getPublicProfile);
 
 router.use((error, req, res, next) => {

@@ -3,7 +3,7 @@ const router = express.Router();
 const controller = require("../controllers/streamingPlatformController");
 const { verifyToken, verifyAdmin } = require("../middleware/authMiddleware");
 
-router.get("/", controller.getPlatforms);
+router.get("/", verifyToken, controller.getPlatforms);
 router.post("/", verifyToken, verifyAdmin, controller.createPlatform);
 router.put("/:id", verifyToken, verifyAdmin, controller.updatePlatform);
 router.delete("/:id", verifyToken, verifyAdmin, controller.deletePlatform);

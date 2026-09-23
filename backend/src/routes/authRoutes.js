@@ -5,7 +5,8 @@ const {
     loginUser,
     logoutUser,
     getProfile,
-    updateProfile
+    updateProfile,
+    getEngagementScore
 } = require("../controllers/authController");
 const { verifyToken } = require("../middleware/authMiddleware");
 
@@ -17,5 +18,6 @@ router.post("/login", loginUser);
 router.post("/logout", verifyToken, logoutUser);
 router.get("/profile", verifyToken, getProfile);
 router.put("/profile", verifyToken, updateProfile);
+router.get("/engagement-score", verifyToken, getEngagementScore);
 
 module.exports = router;

@@ -43,19 +43,23 @@ exports.createGenre = async (req, res) => {
     }
 
     try {
-        const existingGenre = await pool.query(
-            "SELECT * FROM genres WHERE LOWER(name) = LOWER($1)",
-            [name.trim()]
-        );
+        const newGenre = await pool.withTransaction(async (client) => {
+            const existingGenre = await client.query(
+                "SELECT * FROM genres WHERE LOWER(name) = LOWER($1)",
+                [name.trim()]
+            );
 
-        if (existingGenre.rows.length > 0) {
+            if (existingGenre.rows.length > 0) return null;
+
+            return client.query(
+                "INSERT INTO genres (name, description) VALUES ($1, $2) RETURNING genre_id, name, description",
+                [name.trim(), description || null]
+            );
+        });
+
+        if (!newGenre) {
             return res.status(400).json({ message: "Genre already exists" });
         }
-
-        const newGenre = await pool.query(
-            "INSERT INTO genres (name, description) VALUES ($1, $2) RETURNING genre_id, name, description",
-            [name.trim(), description || null]
-        );
 
         res.status(201).json({ message: "Genre created successfully", genre: newGenre.rows[0] });
     } catch (error) {
@@ -74,10 +78,10 @@ exports.updateGenre = async (req, res) => {
     }
 
     try {
-        const updatedGenre = await pool.query(
+        const updatedGenre = await pool.withTransaction((client) => client.query(
             "UPDATE genres SET name = $1, description = $2 WHERE genre_id = $3 RETURNING genre_id, name, description",
             [name.trim(), description || null, id]
-        );
+        ));
 
         if (updatedGenre.rows.length === 0) {
             return res.status(404).json({ message: "Genre not found" });
@@ -95,10 +99,10 @@ exports.deleteGenre = async (req, res) => {
     const { id } = req.params;
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "DELETE FROM genres WHERE genre_id = $1 RETURNING genre_id",
             [id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Genre not found" });
@@ -120,12 +124,12 @@ exports.addGenreToMovie = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `INSERT INTO movie_genres (movie_id, genre_id) 
              VALUES ($1, $2) 
              RETURNING movie_id, genre_id`,
             [movieId, genre_id]
-        );
+        ));
 
         res.status(201).json({ message: "Genre added to movie successfully", data: result.rows[0] });
     } catch (error) {
@@ -142,12 +146,12 @@ exports.removeGenreFromMovie = async (req, res) => {
     const { movieId, genreId } = req.params;
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `DELETE FROM movie_genres 
              WHERE movie_id = $1 AND genre_id = $2 
              RETURNING movie_id, genre_id`,
             [movieId, genreId]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Genre mapping not found for this movie" });

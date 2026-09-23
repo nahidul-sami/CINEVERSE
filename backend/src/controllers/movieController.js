@@ -1,5 +1,18 @@
 const pool = require("../config/db");
 
+const validateMovieMetadata = ({ release_year, duration, rating }) => {
+    const currentYear = new Date().getFullYear();
+    const year = release_year === undefined || release_year === null || release_year === "" ? null : Number(release_year);
+    const runtime = duration === undefined || duration === null || duration === "" ? null : Number(duration);
+    const movieRating = rating === undefined || rating === null || rating === "" ? null : Number(rating);
+
+    if (year !== null && (!Number.isInteger(year) || year < 1888 || year > currentYear + 5)) return "Release year is invalid";
+    if (runtime !== null && (!Number.isInteger(runtime) || runtime < 1 || runtime > 1000)) return "Duration must be between 1 and 1000 minutes";
+    if (movieRating !== null && (!Number.isFinite(movieRating) || movieRating < 0 || movieRating > 10)) return "Rating must be between 0 and 10";
+
+    return null;
+};
+
 exports.searchMovies = async (req, res) => {
     const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
@@ -210,28 +223,31 @@ exports.createMovie = async (req, res) => {
         trailer_url
     } = req.body;
 
-    if (!title || !description) {
+    if (typeof title !== "string" || !title.trim() || typeof description !== "string" || !description.trim()) {
         return res.status(400).json({ message: "Title and description are required" });
     }
 
+    const metadataError = validateMovieMetadata({ release_year, duration, rating });
+    if (metadataError) return res.status(400).json({ message: metadataError });
+
     try {
-        const newMovie = await pool.query(
+        const newMovie = await pool.withTransaction((client) => client.query(
             `INSERT INTO movies
             (title, description, release_year, duration, language, rating, poster_url, backdrop_url, trailer_url)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *`,
             [
-                title,
-                description,
-                release_year || null,
-                duration || null,
+                title.trim(),
+                description.trim(),
+                release_year === "" || release_year === undefined ? null : release_year,
+                duration === "" || duration === undefined ? null : duration,
                 language || null,
-                rating || null,
+                rating === "" || rating === undefined ? null : rating,
                 poster_url || null,
                 backdrop_url || null,
                 trailer_url || null
             ]
-        );
+        ));
 
         res.status(201).json({ message: "Movie added successfully", movie: newMovie.rows[0] });
     } catch (error) {
@@ -253,18 +269,21 @@ exports.addMovieImage = async (req, res) => {
     }
 
     try {
-        // Check if movie exists
-        const movieCheck = await pool.query("SELECT movie_id FROM movies WHERE movie_id = $1", [id]);
-        if (movieCheck.rows.length === 0) {
+        const newImage = await pool.withTransaction(async (client) => {
+            const movieCheck = await client.query("SELECT movie_id FROM movies WHERE movie_id = $1", [id]);
+            if (movieCheck.rows.length === 0) return null;
+
+            return client.query(
+                `INSERT INTO movie_images (movie_id, image_url, image_type)
+                 VALUES ($1, $2, $3)
+                 RETURNING *`,
+                [id, image_url, image_type]
+            );
+        });
+
+        if (!newImage) {
             return res.status(404).json({ message: "Movie not found" });
         }
-
-        const newImage = await pool.query(
-            `INSERT INTO movie_images (movie_id, image_url, image_type)
-             VALUES ($1, $2, $3)
-             RETURNING *`,
-            [id, image_url, image_type]
-        );
 
         res.status(201).json({ message: "Image added successfully", image: newImage.rows[0] });
     } catch (error) {
@@ -281,10 +300,10 @@ exports.deleteMovie = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "DELETE FROM movies WHERE movie_id = $1 RETURNING movie_id",
             [id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Movie not found" });
@@ -306,9 +325,11 @@ exports.updateMovie = async (req, res) => {
     if (typeof title !== "string" || !title.trim() || typeof description !== "string" || !description.trim()) {
         return res.status(400).json({ message: "Title and description are required" });
     }
+    const metadataError = validateMovieMetadata({ release_year, duration, rating });
+    if (metadataError) return res.status(400).json({ message: metadataError });
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `UPDATE movies
              SET title = $1, description = $2, release_year = $3, duration = $4,
                  language = $5, rating = $6, poster_url = $7, backdrop_url = $8, trailer_url = $9
@@ -316,7 +337,7 @@ exports.updateMovie = async (req, res) => {
              RETURNING *`,
             [title.trim(), description.trim(), release_year || null, duration || null, language || null,
                 rating ?? null, poster_url || null, backdrop_url || null, trailer_url || null, id]
-        );
+            ));
         if (!result.rows.length) return res.status(404).json({ message: "Movie not found" });
         res.status(200).json({ message: "Movie updated successfully", movie: result.rows[0] });
     } catch (error) {
@@ -327,14 +348,62 @@ exports.updateMovie = async (req, res) => {
 
 exports.deleteMovieImage = async (req, res) => {
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "DELETE FROM movie_images WHERE image_id = $1 RETURNING image_id",
             [req.params.imageId]
-        );
+        ));
         if (!result.rows.length) return res.status(404).json({ message: "Image not found" });
         res.status(200).json({ message: "Image deleted successfully" });
     } catch (error) {
         console.error("DELETE MOVIE IMAGE ERROR:", error);
         res.status(500).json({ message: "Unable to delete movie image" });
+    }
+};
+
+exports.createMovieWithCredits = async (req, res) => {
+    const {
+        title,
+        description,
+        release_year,
+        duration,
+        language,
+        rating,
+        poster_url,
+        trailer_url,
+        genre_ids,
+        credits
+    } = req.body;
+
+    if (typeof title !== "string" || !title.trim() || typeof description !== "string" || !description.trim()) {
+        return res.status(400).json({ message: "Title and description are required" });
+    }
+
+    const metadataError = validateMovieMetadata({ release_year, duration, rating });
+    if (metadataError) return res.status(400).json({ message: metadataError });
+
+    const genreIds = Array.isArray(genre_ids) ? genre_ids : [];
+    const movieCredits = Array.isArray(credits) ? credits : [];
+
+    try {
+        await pool.query(
+            `CALL add_movie_with_credits($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [
+                title.trim(),
+                description.trim(),
+                release_year === "" || release_year === undefined ? null : release_year,
+                duration === "" || duration === undefined ? null : duration,
+                language || null,
+                rating === "" || rating === undefined ? null : rating,
+                poster_url || null,
+                trailer_url || null,
+                genreIds,
+                JSON.stringify(movieCredits)
+            ]
+        );
+
+        res.status(201).json({ message: "Movie with credits added successfully" });
+    } catch (error) {
+        console.error("ADD MOVIE WITH CREDITS ERROR:", error);
+        res.status(500).json({ message: "Server error while adding movie with credits", error: error.message });
     }
 };

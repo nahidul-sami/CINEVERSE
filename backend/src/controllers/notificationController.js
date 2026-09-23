@@ -35,10 +35,10 @@ exports.markAsRead = async (req, res) => {
     const { id } = req.params;
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "UPDATE notifications SET is_read = true WHERE notification_id = $1 AND user_id = $2 RETURNING *",
             [id, req.user.user_id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Notification not found" });
@@ -53,10 +53,10 @@ exports.markAsRead = async (req, res) => {
 
 exports.markAllAsRead = async (req, res) => {
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false RETURNING notification_id",
             [req.user.user_id]
-        );
+        ));
 
         res.status(200).json({ message: "Notifications marked as read", updated_count: result.rows.length });
     } catch (error) {
@@ -67,10 +67,10 @@ exports.markAllAsRead = async (req, res) => {
 
 exports.deleteNotification = async (req, res) => {
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             "DELETE FROM notifications WHERE notification_id = $1 AND user_id = $2 RETURNING notification_id",
             [req.params.id, req.user.user_id]
-        );
+        ));
         if (!result.rows.length) return res.status(404).json({ message: "Notification not found" });
         res.status(200).json({ message: "Notification deleted successfully" });
     } catch (error) {

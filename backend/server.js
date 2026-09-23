@@ -14,6 +14,7 @@ const genreRoutes = require("./src/routes/genreRoutes");
 const friendshipRoutes = require("./src/routes/friendshipRoutes");
 const notificationRoutes = require("./src/routes/notificationRoutes");
 const streamingPlatformRoutes = require("./src/routes/streamingPlatformRoutes");
+const { verifyToken } = require("./src/middleware/authMiddleware");
 
 
 const app = express();
@@ -23,7 +24,7 @@ app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-app.get("/db-test", async (req, res) => {
+app.get("/db-test", verifyToken, async (req, res) => {
     try {
         const result = await require("./src/config/db").query("SELECT current_database() AS database_name");
         res.status(200).json({ database_name: result.rows[0].database_name });

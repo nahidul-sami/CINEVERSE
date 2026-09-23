@@ -1,6 +1,6 @@
-ALTER TABLE movies ADD COLUMN backdrop_url TEXT;
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS backdrop_url TEXT;
 
-CREATE TABLE movie_images (
+CREATE TABLE IF NOT EXISTS movie_images (
     image_id SERIAL PRIMARY KEY,
     movie_id INT NOT NULL,
     image_url TEXT NOT NULL,

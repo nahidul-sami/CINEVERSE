@@ -35,7 +35,19 @@ const verifyToken = async (req, res, next) => {
             return res.status(401).json({ message: "Token has been revoked. Please log in again." });
         }
 
-        req.user = decoded;
+        const currentUser = await pool.query(
+            "SELECT user_id, role FROM users WHERE user_id = $1",
+            [decoded.user_id]
+        );
+
+        if (currentUser.rows.length === 0) {
+            return res.status(401).json({ message: "User account no longer exists." });
+        }
+
+        req.user = {
+            ...decoded,
+            role: currentUser.rows[0].role
+        };
         next();
     } catch (error) {
         console.error("TOKEN REVOCATION CHECK ERROR:", error);

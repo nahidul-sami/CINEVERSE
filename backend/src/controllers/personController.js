@@ -54,12 +54,12 @@ exports.createPerson = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `INSERT INTO person (name, birth_date, biography, profile_url, person_type)
              VALUES ($1, $2, $3, $4, $5)
              RETURNING person_id, name, birth_date, biography, profile_url, person_type`,
             [name.trim(), birth_date || null, biography || null, profile_url || null, person_type || null]
-        );
+        ));
 
         res.status(201).json({ message: "Person added successfully", person: result.rows[0] });
     } catch (error) {
@@ -77,13 +77,13 @@ exports.updatePerson = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `UPDATE person
              SET name = $1, birth_date = $2, biography = $3, profile_url = $4, person_type = $5
              WHERE person_id = $6
              RETURNING person_id, name, birth_date, biography, profile_url, person_type`,
             [name.trim(), birth_date || null, biography || null, profile_url || null, person_type || null, id]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Person not found" });
@@ -100,7 +100,7 @@ exports.deletePerson = async (req, res) => {
     const { id } = req.params;
 
     try {
-        const result = await pool.query("DELETE FROM person WHERE person_id = $1 RETURNING person_id", [id]);
+        const result = await pool.withTransaction((client) => client.query("DELETE FROM person WHERE person_id = $1 RETURNING person_id", [id]));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Person not found" });
@@ -122,12 +122,12 @@ exports.addMovieCredit = async (req, res) => {
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `INSERT INTO movie_cast_crew (movie_id, person_id, credit_type, character_name)
              VALUES ($1, $2, $3, $4)
              RETURNING movie_id, person_id, credit_type, character_name`,
             [movieId, person_id, credit_type.trim(), character_name || null]
-        );
+        ));
 
         res.status(201).json({ message: "Movie credit added successfully", credit: result.rows[0] });
     } catch (error) {
@@ -143,12 +143,12 @@ exports.removeMovieCredit = async (req, res) => {
     const { movieId, personId, creditType } = req.params;
 
     try {
-        const result = await pool.query(
+        const result = await pool.withTransaction((client) => client.query(
             `DELETE FROM movie_cast_crew
              WHERE movie_id = $1 AND person_id = $2 AND credit_type = $3
              RETURNING movie_id, person_id, credit_type`,
             [movieId, personId, creditType]
-        );
+        ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Movie credit not found" });

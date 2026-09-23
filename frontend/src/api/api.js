@@ -41,6 +41,7 @@ export const authApi = {
   logout: () => API.post('/auth/logout'),
   profile: () => API.get('/auth/profile'),
   updateProfile: (payload) => API.put('/auth/profile', payload),
+  getEngagementScore: () => API.get('/auth/engagement-score'),
 };
 
 export const userApi = {
