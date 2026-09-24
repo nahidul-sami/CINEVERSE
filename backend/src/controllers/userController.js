@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const pool = require("../config/db");
+const { isSpoilerReview } = require("../utils/spoilerUtils");
 
 const safeUserFields = `
     u.user_id,
@@ -12,6 +13,18 @@ const safeUserFields = `
     u.email,
     u.role,
     u.created_at
+`;
+
+const returningUserFields = `
+    user_id,
+    name,
+    username,
+    display_name,
+    bio,
+    profile_image,
+    email,
+    role,
+    created_at
 `;
 
 const normalizeProfileImage = (value) => {
@@ -61,18 +74,28 @@ const getRecentWatched = async (userId) => {
     return result.rows;
 };
 
-const getRecentReviews = async (userId) => {
+const getRecentReviews = async (userId, viewerUserId = null) => {
     const result = await pool.query(
-        `SELECT r.review_id, r.movie_id, r.rating, r.review_text, r.created_at,
+        `SELECT r.review_id, r.movie_id, r.user_id, r.rating, r.review_text, r.created_at,
                 m.title, m.poster_url
          FROM reviews r
          JOIN movies m ON m.movie_id = r.movie_id
          WHERE r.user_id = $1
-         ORDER BY r.created_at DESC
-         LIMIT 3`,
+         ORDER BY r.created_at DESC`,
         [userId]
     );
-    return result.rows;
+
+    return result.rows.map((review) => {
+        const reviewText = typeof review.review_text === "string" ? review.review_text : "";
+        const isSpoiler = isSpoilerReview(reviewText);
+        const isOwner = viewerUserId !== null && viewerUserId !== undefined && Number(review.user_id) === Number(viewerUserId);
+
+        return {
+            ...review,
+            is_spoiler: isSpoiler,
+            review_text: isSpoiler && !isOwner ? "This review contains spoilers and is hidden for safety." : reviewText,
+        };
+    });
 };
 
 const getUserWatchlists = async (userId) => {
@@ -103,7 +126,7 @@ exports.getOwnProfile = async (req, res) => {
         const user = result.rows[0];
         const stats = await getUserStats(req.user.user_id);
         const recentWatched = await getRecentWatched(req.user.user_id);
-        const recentReviews = await getRecentReviews(req.user.user_id);
+        const recentReviews = await getRecentReviews(req.user.user_id, req.user.user_id);
         const watchlists = await getUserWatchlists(req.user.user_id);
 
         res.status(200).json({
@@ -152,7 +175,7 @@ exports.updateOwnProfile = async (req, res) => {
                      display_name = $3,
                      bio = $4
                  WHERE user_id = $5
-                 RETURNING ${safeUserFields}`,
+                 RETURNING ${returningUserFields}`,
                 [safeName, safeUsername, safeDisplayName, nextBio, req.user.user_id]
             );
         });
@@ -238,7 +261,7 @@ exports.getPublicProfile = async (req, res) => {
         const user = result.rows[0];
         const stats = await getUserStats(Number(userId));
         const recentWatched = await getRecentWatched(Number(userId));
-        const recentReviews = await getRecentReviews(Number(userId));
+        const recentReviews = await getRecentReviews(Number(userId), req.user?.user_id ?? null);
         const watchlists = await getUserWatchlists(Number(userId));
 
         res.status(200).json({
@@ -282,7 +305,7 @@ exports.uploadProfilePicture = async (req, res) => {
             `UPDATE users
              SET profile_image = $1
              WHERE user_id = $2
-             RETURNING ${safeUserFields}`,
+             RETURNING ${returningUserFields}`,
             [relativePath, req.user.user_id]
         ));
 
@@ -313,7 +336,7 @@ exports.removeProfilePicture = async (req, res) => {
             `UPDATE users
              SET profile_image = NULL
              WHERE user_id = $1
-             RETURNING ${safeUserFields}`,
+             RETURNING ${returningUserFields}`,
             [req.user.user_id]
         ));
 

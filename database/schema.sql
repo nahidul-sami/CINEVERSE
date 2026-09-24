@@ -61,7 +61,7 @@ CREATE TABLE movies (
     poster_url TEXT,
     backdrop_url TEXT,
     description TEXT,
-    average_rating DECIMAL(3,2),
+    average_rating DECIMAL(4,2),
     duration INT
 );
 
@@ -203,7 +203,7 @@ CREATE TABLE reviews (
     review_id SERIAL PRIMARY KEY,
     movie_id INT NOT NULL,
     user_id INT NOT NULL,
-    rating DECIMAL(2,1) NOT NULL,
+    rating DECIMAL(3,1) NOT NULL,
     review_text TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 

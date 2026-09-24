@@ -11,14 +11,23 @@ exports.sendFriendRequest = async (req, res) => {
         return res.status(400).json({ message: "You cannot send a friend request to yourself" });
     }
 
+    if (req.user.role === "admin") {
+        return res.status(403).json({ message: "Admin accounts cannot send friend requests" });
+    }
+
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
 
-        const friend = await client.query("SELECT user_id FROM users WHERE user_id = $1", [friend_id]);
+        const friend = await client.query("SELECT user_id, role FROM users WHERE user_id = $1", [friend_id]);
         if (friend.rows.length === 0) {
             await client.query("ROLLBACK");
             return res.status(404).json({ message: "User not found" });
+        }
+
+        if (friend.rows[0].role === "admin") {
+            await client.query("ROLLBACK");
+            return res.status(403).json({ message: "Admin accounts cannot be added as friends" });
         }
 
         const existing = await client.query(
@@ -116,7 +125,10 @@ exports.getFriends = async (req, res) => {
                     u.user_id, u.name, u.email
              FROM friendships f
              JOIN users u ON u.user_id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END
-             WHERE (f.user_id = $1 OR f.friend_id = $1) AND f.status = 'accepted'
+                         WHERE (f.user_id = $1 OR f.friend_id = $1)
+                             AND f.status = 'accepted'
+                             AND (SELECT role FROM users WHERE user_id = $1) = 'user'
+                             AND u.role = 'user'
              ORDER BY f.created_at DESC`,
             [req.user.user_id]
         );
@@ -135,7 +147,7 @@ exports.getPendingRequests = async (req, res) => {
                     u.user_id AS sender_id, u.name AS sender_name, u.email AS sender_email
              FROM friendships f
              JOIN users u ON u.user_id = f.user_id
-             WHERE f.friend_id = $1 AND f.status = 'pending'
+             WHERE f.friend_id = $1 AND f.status = 'pending' AND u.role = 'user'
              ORDER BY f.created_at DESC`,
             [req.user.user_id]
         );
@@ -154,7 +166,7 @@ exports.getSentRequests = async (req, res) => {
                     u.user_id AS recipient_id, u.name AS recipient_name, u.email AS recipient_email
              FROM friendships f
              JOIN users u ON u.user_id = f.friend_id
-             WHERE f.user_id = $1 AND f.status = 'pending'
+             WHERE f.user_id = $1 AND f.status = 'pending' AND u.role = 'user'
              ORDER BY f.created_at DESC`,
             [req.user.user_id]
         );

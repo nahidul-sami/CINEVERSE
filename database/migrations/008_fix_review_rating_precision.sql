@@ -1,0 +1,3 @@
+ALTER TABLE reviews
+    ALTER COLUMN rating TYPE NUMERIC(3,1)
+    USING rating::NUMERIC(3,1);

@@ -52,9 +52,7 @@ export const userApi = {
   uploadProfilePicture: (file) => {
     const formData = new FormData();
     formData.append('profile_image', file);
-    return API.post('/users/profile-picture', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    return API.post('/users/profile-picture', formData);
   },
   removeProfilePicture: () => API.delete('/users/profile-picture'),
 };
@@ -127,6 +125,10 @@ export const notificationApi = {
 
 export const personApi = {
   getAll: () => API.get('/persons'),
+  search: (queryOrParams = {}) => API.get('/persons/search', { params: typeof queryOrParams === 'string' ? { q: queryOrParams } : queryOrParams }),
+  getDetail: (id) => API.get(`/persons/detail/${id}`),
+  getFromTmdb: (tmdbId) => API.get(`/persons/tmdb/${tmdbId}`),
+  getSimilar: (id) => API.get(`/persons/${id}/similar`),
   create: (payload) => API.post('/persons', payload),
   update: (personId, payload) => API.put(`/persons/${personId}`, payload),
   remove: (personId) => API.delete(`/persons/${personId}`),

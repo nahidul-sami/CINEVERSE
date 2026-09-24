@@ -29,6 +29,17 @@ function ProfilePage({ user, profileData, onEdit, onNavigateUser, onNavigateSear
   const recentReviews = profileData?.recentReviews || [];
   const watchlists = profileData?.watchlists || [];
 
+  const getVisibleReviewText = (review) => {
+    const rawText = review?.review_text || 'No review text provided yet.';
+    if (
+      review?.is_spoiler ||
+      /\bspoiler\b|\bplot twist\b|\bmajor twist\b|\bfinal reveal\b|\bending reveal\b|\b(?:big|major|final|ending|surprise)\s+reveal\b|\b(?:rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man)\s+(?:dies?|gets killed)\b|\b(?:dies?|gets killed)\s+(?:in|during|at|before)\s+(?:this|the)\s+(?:movie|film|show|series|episode)\b/i.test(rawText)
+    ) {
+      return 'This review contains spoilers and is hidden for safety.';
+    }
+    return rawText;
+  };
+
   return (
     <main className="mx-auto max-w-6xl pb-14 pt-8">
       <section className="overflow-hidden rounded-[32px] border border-slate-800/80 bg-slate-950/70 shadow-[0_30px_80px_rgba(8,15,30,0.7)]">
@@ -103,21 +114,30 @@ function ProfilePage({ user, profileData, onEdit, onNavigateUser, onNavigateSear
             </div>
 
             {recentReviews.length ? (
-              <div className="space-y-3">
-                {recentReviews.map((review) => (
-                  <div key={review.review_id} className="rounded-2xl border border-slate-800 bg-slate-900/45 p-3">
-                    <div className="flex items-center gap-3">
-                      <img src={review.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={review.title} className="h-16 w-12 rounded-xl object-cover" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="truncate font-semibold text-white">{review.title}</p>
-                          <span className="rounded-full bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">{Number(review.rating).toFixed(1)}</span>
+              <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-2">
+                {recentReviews.map((review) => {
+                  const reviewText = getVisibleReviewText(review);
+
+                  return (
+                    <button
+                      key={review.review_id}
+                      type="button"
+                      onClick={() => onNavigateUser && onNavigateUser(`/movie/${review.movie_id}`)}
+                      className="w-full rounded-2xl border border-slate-800 bg-slate-900/45 p-3 text-left transition hover:border-cyan-400/60 hover:bg-slate-900/70"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img src={review.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={review.title} className="h-16 w-12 rounded-xl object-cover" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="truncate font-semibold text-white">{review.title}</p>
+                            <span className="rounded-full bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">{Number(review.rating).toFixed(1)}</span>
+                          </div>
+                          <p className="mt-1 text-sm text-slate-300">{reviewText}</p>
                         </div>
-                        <p className="mt-1 text-sm text-slate-300">{review.review_text || 'No review text provided yet.'}</p>
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-slate-400">No reviews yet.</p>

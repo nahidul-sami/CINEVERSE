@@ -45,6 +45,7 @@ import ProfilePage from './pages/ProfilePage';
 import EditProfilePage from './pages/EditProfilePage';
 import PublicProfilePage from './pages/PublicProfilePage';
 import SearchPage from './pages/SearchPage';
+import PersonDetail from './components/PersonDetail';
 
 const dashboardTabs = ['Profile', 'History', 'Friends'];
 const adminTabs = ['Manage Movies', 'Manage Genres', 'Streaming Platforms', 'Cast & Crew Assignment'];
@@ -81,6 +82,39 @@ const getYouTubeEmbedUrl = (url) => {
   return match ? `https://www.youtube.com/embed/${match[1]}?autoplay=1` : null;
 };
 
+const spoilerPatterns = [
+  /\bspoiler\b/i,
+  /\bplot twist\b/i,
+  /\bmajor twist\b/i,
+  /\bfinal reveal\b/i,
+  /\bending reveal\b/i,
+  /\b(?:big|major|final|ending|surprise)\s+reveal\b/i,
+  /\bat the end\b/i,
+  /\bin the final scene\b/i,
+  /\b(?:[a-z]+)\s+(?:dies?|gets killed|is actually|turns out to be|was the killer|was the villain)\s+(?:in|during|at|before)\b/i,
+  /\b(?:dies?|gets killed|is actually|turns out to be|was the killer|was the villain)\s+(?:in|during|at|before)\s+(?:this|the)\s+(?:movie|film|show|series|episode)\b/i,
+  /\b(?:he|she|they|it|rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man|the villain|the killer|the hero|the main character|the protagonist|the character)\s+(?:dies?|gets killed|is actually|turns out to be|was the killer|was the villain)\b/i,
+  /\b(?:the villain|the killer|the hero|the main character|the mc|the protagonist|the character)\s+(?:was|is)\b/i,
+  /\breveal(?:s|ed)?\s+(?:that|who)\b/i,
+  /\b(?:killer|villain|traitor|murderer)\s+(?:is|was)\b/i,
+  /\b(?:rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man)\s+(?:dies?|gets killed)\b/i,
+];
+
+const containsSpoilerText = (text) => {
+  if (typeof text !== 'string') return false;
+  const normalized = text.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!normalized) return false;
+  return spoilerPatterns.some((pattern) => pattern.test(normalized));
+};
+
+const getVisibleReviewText = (review) => {
+  const rawText = review?.review_text || 'No review text provided.';
+  if (review?.is_spoiler || containsSpoilerText(rawText)) {
+    return 'This review contains spoilers and is hidden for safety.';
+  }
+  return rawText;
+};
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [user, setUser] = useState(() => {
@@ -95,6 +129,10 @@ function App() {
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [profileName, setProfileName] = useState('');
   const [movies, setMovies] = useState([]);
+  const [adminMovies, setAdminMovies] = useState([]);
+  const [adminSearchResults, setAdminSearchResults] = useState(null);
+  const [adminMovieLoading, setAdminMovieLoading] = useState(false);
+  const [debouncedAdminMovieSearch, setDebouncedAdminMovieSearch] = useState('');
   const [recommendations, setRecommendations] = useState([]);
   const [genres, setGenres] = useState([]);
   const [movieDetail, setMovieDetail] = useState(null);
@@ -109,6 +147,7 @@ function App() {
   const [selectedGenreId, setSelectedGenreId] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [personSuggestions, setPersonSuggestions] = useState([]);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy] = useState('rating');
   const [reviewText, setReviewText] = useState('');
@@ -137,6 +176,10 @@ function App() {
   const [selectedWatchlist, setSelectedWatchlist] = useState(null);
   const [watchlistDetailLoading, setWatchlistDetailLoading] = useState(false);
   const [addingMovieId, setAddingMovieId] = useState(null);
+  const [watchlistPickerMovie, setWatchlistPickerMovie] = useState(null);
+  const [watchlistPickerLoading, setWatchlistPickerLoading] = useState(false);
+  const [watchlistSaving, setWatchlistSaving] = useState(false);
+  const [newWatchlistName, setNewWatchlistName] = useState('');
   const [movieForm, setMovieForm] = useState({ title: '', description: '', release_year: '', duration: '', language: '', rating: '', poster_url: '', backdrop_url: '', trailer_url: '' });
   const [genreForm, setGenreForm] = useState({ name: '', description: '' });
   const [editingGenreId, setEditingGenreId] = useState(null);
@@ -158,6 +201,10 @@ function App() {
   const [associationPlatformId, setAssociationPlatformId] = useState('');
   const [associationPlatformUrl, setAssociationPlatformUrl] = useState('');
   const [people, setPeople] = useState([]);
+  const [personSearch, setPersonSearch] = useState('');
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [selectedAdminPerson, setSelectedAdminPerson] = useState(null);
+  const [adminPersonLoading, setAdminPersonLoading] = useState(false);
   const [creditSubmitting, setCreditSubmitting] = useState(false);
   const [trailerOpen, setTrailerOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(null);
@@ -166,6 +213,7 @@ function App() {
   const toastTimer = useRef(null);
   const notificationMenuRef = useRef(null);
   const searchMenuRef = useRef(null);
+  const friendSearchRef = useRef(null);
   const dashboardSectionRef = useRef(null);
   const lastScrollY = useRef(0);
 
@@ -265,6 +313,24 @@ function App() {
   }, [searchTerm]);
 
   useEffect(() => {
+    const query = searchTerm.trim();
+    if (query.length < 2) {
+      setPersonSuggestions([]);
+      return undefined;
+    }
+    let ignore = false;
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await personApi.search({ q: query, limit: 6 });
+        if (!ignore) setPersonSuggestions(response.data?.persons || []);
+      } catch {
+        if (!ignore) setPersonSuggestions([]);
+      }
+    }, 180);
+    return () => { ignore = true; window.clearTimeout(timeout); };
+  }, [searchTerm]);
+
+  useEffect(() => {
     const query = friendEmail.trim();
     if (query.length < 2 || selectedFriend) {
       return undefined;
@@ -336,6 +402,9 @@ function App() {
       if (notificationMenuRef.current && !notificationMenuRef.current.contains(event.target)) {
         setNotificationsOpen(false);
       }
+      if (friendSearchRef.current && !friendSearchRef.current.contains(event.target)) {
+        setFriendSuggestions([]);
+      }
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
@@ -348,6 +417,8 @@ function App() {
       ? '/login'
       : route === '/admin' && user?.role !== 'admin'
         ? '/login'
+        : user?.role === 'admin' && ['/watchlists', '/history', '/friends'].includes(route)
+          ? '/admin'
         : route === '/' && user?.role === 'admin'
           ? '/admin'
           : route;
@@ -357,7 +428,16 @@ function App() {
   }, [route, token, user]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !user || user.role === 'admin') {
+      if (user?.role === 'admin') {
+        setFriends([]);
+        setPendingRequests([]);
+        setSentRequests([]);
+        setWatchlists([]);
+        setSharedWatchlists([]);
+      }
+      return undefined;
+    }
 
     const loadDashboardData = async () => {
       setLoading((prev) => ({ ...prev, history: true, watchlists: true, friends: true }));
@@ -384,7 +464,7 @@ function App() {
     };
 
     loadDashboardData();
-  }, [token, showToast]);
+  }, [token, user, showToast]);
 
   useEffect(() => {
     if (!token) {
@@ -407,6 +487,7 @@ function App() {
       }
     };
 
+    let ignore = false;
     const loadMovies = async () => {
       setLoading((prev) => ({ ...prev, movies: true, page: false }));
       try {
@@ -417,18 +498,83 @@ function App() {
         const response = debouncedSearch.trim()
           ? await movieApi.search({ q: debouncedSearch.trim(), page: 1, limit: 100 })
           : await movieApi.getAll(params);
-        setMovies(debouncedSearch.trim() ? (response.data?.results || []) : (response.data || []));
+        if (!ignore) setMovies(debouncedSearch.trim() ? (response.data?.results || []) : (response.data || []));
       } catch (error) {
-        showToast(error?.response?.data?.message || 'Failed to load movies', 'error');
-        setMovies([]);
+        if (!ignore) {
+          showToast(error?.response?.data?.message || 'Failed to load movies', 'error');
+          setMovies([]);
+        }
       } finally {
-        setLoading((prev) => ({ ...prev, movies: false }));
+        if (!ignore) setLoading((prev) => ({ ...prev, movies: false }));
       }
     };
 
     loadGenres();
     loadMovies();
+    return () => { ignore = true; };
   }, [selectedGenreId, debouncedSearch, showToast]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedAdminMovieSearch(movieSearch), 180);
+    return () => window.clearTimeout(timeout);
+  }, [movieSearch]);
+
+  useEffect(() => {
+    if (route !== '/admin' || adminTab !== 'Manage Movies') return undefined;
+    let ignore = false;
+    const loadAdminMovies = async () => {
+      setAdminMovieLoading(true);
+      try {
+        const query = debouncedAdminMovieSearch.trim();
+        if (query && adminMovies.length > 0) {
+          const localMatches = adminMovies.filter((movie) => (movie.title || '').toLowerCase().includes(query.toLowerCase()));
+          if (localMatches.length > 0) {
+            if (!ignore) setAdminSearchResults(localMatches);
+            return;
+          }
+        }
+
+        if (!query && adminMovies.length > 0) {
+          if (!ignore) setAdminSearchResults(null);
+          return;
+        }
+
+        const response = query
+          ? await movieApi.search({ q: query, page: 1, limit: 100 })
+          : await movieApi.getAll({ limit: 200 });
+        if (!ignore) {
+          if (query) setAdminSearchResults(response.data?.results || []);
+          else setAdminMovies(response.data || []);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setAdminMovies([]);
+          showToast(error?.response?.data?.message || 'Could not load admin movies', 'error');
+        }
+      } finally {
+        if (!ignore) setAdminMovieLoading(false);
+      }
+    };
+    loadAdminMovies();
+    return () => { ignore = true; };
+  }, [adminMovies, adminTab, debouncedAdminMovieSearch, route, showToast]);
+
+  useEffect(() => {
+    if (route !== '/admin' || adminTab !== 'Cast & Crew Assignment') return undefined;
+    let ignore = false;
+    setPeopleLoading(true);
+    personApi.getAll()
+      .then((response) => {
+        if (!ignore) setPeople(response.data || []);
+      })
+      .catch((error) => {
+        if (!ignore) showToast(error?.response?.data?.message || 'Could not load people', 'error');
+      })
+      .finally(() => {
+        if (!ignore) setPeopleLoading(false);
+      });
+    return () => { ignore = true; };
+  }, [adminTab, route, showToast]);
 
   useEffect(() => {
     const slug = route.match(/^\/movie\/(\d+)$/);
@@ -462,6 +608,10 @@ function App() {
   }, [route, showToast]);
 
   useEffect(() => {
+    if (route.startsWith('/person/')) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [route]);
+
+  useEffect(() => {
     if (!route.startsWith('/movie/')) return;
     const movieId = Number(route.match(/^\/movie\/(\d+)$/)?.[1]);
     const historyItem = watchHistory.find((item) => Number(item.movie_id) === movieId);
@@ -469,25 +619,28 @@ function App() {
   }, [route, watchHistory]);
 
   const filteredMovies = useMemo(() => {
-    const search = debouncedSearch.trim().toLowerCase();
     const list = [...movies];
 
-    return list
-      .filter((movie) => {
-        const haystack = `${movie.title || ''} ${movie.description || ''}`.toLowerCase();
-        return !search || haystack.includes(search);
-      })
-      .sort((a, b) => {
+    return list.sort((a, b) => {
         if (sortBy === 'year') return Number(b.release_year || 0) - Number(a.release_year || 0);
         if (sortBy === 'name') return (a.title || '').localeCompare(b.title || '');
         return Number(b.rating || 0) - Number(a.rating || 0);
       });
-  }, [movies, debouncedSearch, sortBy]);
+  }, [movies, sortBy]);
+
+  const visiblePeople = useMemo(() => {
+    const query = personSearch.trim().toLowerCase();
+    if (!query) return people;
+    return people.filter((person) => `${person.name || ''} ${person.person_type || ''}`.toLowerCase().includes(query));
+  }, [people, personSearch]);
 
   const searchSuggestions = useMemo(() => {
     if (!searchTerm.trim()) return [];
-    return filteredMovies.slice(0, 6);
-  }, [filteredMovies, searchTerm]);
+    return [
+      ...filteredMovies.slice(0, 4).map((movie) => ({ ...movie, suggestionType: 'movie' })),
+      ...personSuggestions.slice(0, 4).map((person) => ({ ...person, suggestionType: 'person' })),
+    ];
+  }, [filteredMovies, personSuggestions, searchTerm]);
 
   const featuredMovie = filteredMovies[0] || movieDetail || movies[0] || null;
 
@@ -536,6 +689,12 @@ function App() {
     setRoute(`/movie/${movieId}`);
   };
 
+  const handlePersonOpen = (person) => {
+    const nextRoute = person?.tmdb_id ? `/person/tmdb/${person.tmdb_id}` : `/person/${person.person_id}`;
+    setSearchOpen(false);
+    setRoute(nextRoute);
+  };
+
   const openGallery = (index) => setGalleryIndex(index);
   const closeGallery = () => setGalleryIndex(null);
   const nextGalleryImage = () => setGalleryIndex((index) => (index + 1) % selectedMovie.images.length);
@@ -554,19 +713,43 @@ function App() {
       return;
     }
 
+    const spoilerPatterns = [
+      /\bspoiler\b/i,
+      /\bplot twist\b/i,
+      /\bmajor twist\b/i,
+      /\bfinal reveal\b/i,
+      /\bending reveal\b/i,
+      /\bat the end\b/i,
+      /\bin the final scene\b/i,
+      /\b(?:he|she|they)\s+(?:dies?|gets killed|is actually|turns out to be)\b/i,
+      /\b(?:the villain|the killer|the hero|the main character)\s+(?:was|is)\b/i,
+      /\breveal(?:s|ed)?\s+(?:that|who)\b/i,
+      /\b(?:killer|villain|traitor|murderer)\s+(?:is|was)\b/i,
+    ];
+
+    if (containsSpoilerText(reviewText)) {
+      showToast('Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review.', 'error');
+      return;
+    }
+
     try {
-      await reviewApi.create({
-        movie_id: movieDetail.movie_id,
+      const payload = {
         rating: Number(reviewRating),
         review_text: reviewText,
-      });
+      };
+      const existingReview = reviews.find((review) => Number(review.user_id) === Number(user?.user_id));
+      if (existingReview) {
+        await reviewApi.update(existingReview.review_id, payload);
+      } else {
+        await reviewApi.create({ movie_id: movieDetail.movie_id, ...payload });
+      }
       setReviewText('');
       setReviewRating(5);
       const refreshed = await reviewApi.listByMovie(movieDetail.movie_id);
       setReviews(refreshed.data?.reviews || []);
-      showToast('Review submitted');
+      showToast(existingReview ? 'Review updated' : 'Review submitted');
     } catch (error) {
-      showToast(error?.response?.data?.message || 'Review submission failed', 'error');
+      showToast(error?.response?.data?.message || error?.response?.data?.error || 'Review submission failed', 'error');
     }
   };
 
@@ -581,6 +764,25 @@ function App() {
   const saveReviewEdit = async () => {
     if (!editReviewText.trim()) {
       showToast('Please enter a review before saving', 'error');
+      return;
+    }
+
+    const spoilerPatterns = [
+      /\bspoiler\b/i,
+      /\bplot twist\b/i,
+      /\bmajor twist\b/i,
+      /\bfinal reveal\b/i,
+      /\bending reveal\b/i,
+      /\bat the end\b/i,
+      /\bin the final scene\b/i,
+      /\b(?:he|she|they)\s+(?:dies?|gets killed|is actually|turns out to be)\b/i,
+      /\b(?:the villain|the killer|the hero|the main character)\s+(?:was|is)\b/i,
+      /\breveal(?:s|ed)?\s+(?:that|who)\b/i,
+      /\b(?:killer|villain|traitor|murderer)\s+(?:is|was)\b/i,
+    ];
+
+    if (containsSpoilerText(editReviewText)) {
+      showToast('Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review.', 'error');
       return;
     }
 
@@ -706,25 +908,46 @@ function App() {
       return;
     }
 
-    const movieId = movie.movie_id || movie.id || movie.movieId;
-    setAddingMovieId(movieId);
-
+    setWatchlistPickerMovie(movie);
+    setNewWatchlistName('');
+    setWatchlistPickerLoading(true);
     try {
       const currentWatchlists = await watchlistApi.getAll();
-      let targetList = currentWatchlists.data?.watchlists?.[0];
-      if (!targetList) {
-        const created = await watchlistApi.create({ name: 'My Watchlist' });
-        targetList = created.data?.watchlist;
+      setWatchlists(currentWatchlists.data?.watchlists || []);
+    } catch (error) {
+      setWatchlistPickerMovie(null);
+      showToast(error?.response?.data?.message || 'Could not load watchlists', 'error');
+    } finally {
+      setWatchlistPickerLoading(false);
+    }
+  };
+
+  const saveMovieToWatchlist = async (watchlistId) => {
+    if (!watchlistPickerMovie) return;
+    const movieId = watchlistPickerMovie.movie_id || watchlistPickerMovie.id || watchlistPickerMovie.movieId;
+    setAddingMovieId(movieId);
+    setWatchlistSaving(true);
+    try {
+      let targetWatchlistId = watchlistId;
+      if (!targetWatchlistId) {
+        if (!newWatchlistName.trim()) {
+          showToast('Enter a name for the new watchlist', 'error');
+          return;
+        }
+        const created = await watchlistApi.create({ name: newWatchlistName.trim() });
+        targetWatchlistId = created.data?.watchlist?.watchlist_id;
       }
 
-      await watchlistApi.addMovie(targetList.watchlist_id, { movie_id: movieId });
+      await watchlistApi.addMovie(targetWatchlistId, { movie_id: movieId });
       const refreshed = await watchlistApi.getAll();
       setWatchlists(refreshed.data?.watchlists || []);
+      setWatchlistPickerMovie(null);
       showToast('Added to watchlist');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Could not add movie to watchlist', 'error');
     } finally {
       setAddingMovieId(null);
+      setWatchlistSaving(false);
     }
   };
 
@@ -945,6 +1168,8 @@ function App() {
       setEditingMovieId(null);
       const response = await movieApi.getAll();
       setMovies(response.data || []);
+      setAdminMovies(response.data || []);
+      setAdminSearchResults(null);
       setMovieModalOpen(false);
       showToast(editingMovieId ? 'Movie updated successfully' : 'Movie created successfully');
     } catch (error) {
@@ -976,6 +1201,8 @@ function App() {
     try {
       await movieApi.remove(deleteMovieId);
       setMovies((current) => current.filter((movie) => Number(movie.movie_id) !== Number(deleteMovieId)));
+      setAdminMovies((current) => current.filter((movie) => Number(movie.movie_id) !== Number(deleteMovieId)));
+      setAdminSearchResults((current) => current?.filter((movie) => Number(movie.movie_id) !== Number(deleteMovieId)) || null);
       if (Number(movieDetail?.movie_id) === Number(deleteMovieId)) {
         const nextRoute = user?.role === 'admin' ? '/admin' : '/';
         setMovieDetail(null);
@@ -1147,6 +1374,10 @@ function App() {
       setEditingPersonId(null);
       const response = await personApi.getAll();
       setPeople(response.data || []);
+      if (editingPersonId) {
+        const updatedPerson = (response.data || []).find((person) => Number(person.person_id) === Number(editingPersonId));
+        if (updatedPerson) setSelectedAdminPerson((current) => ({ ...current, ...updatedPerson }));
+      }
       showToast(editingPersonId ? 'Person updated' : 'Person created');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Person creation failed', 'error');
@@ -1158,11 +1389,24 @@ function App() {
     setPersonForm({ name: person.name || '', birth_date: person.birth_date || '', biography: person.biography || '', profile_url: person.profile_url || '', person_type: person.person_type || 'actor' });
   };
 
+  const openAdminPerson = async (person) => {
+    setAdminPersonLoading(true);
+    try {
+      const response = await personApi.getDetail(person.person_id);
+      setSelectedAdminPerson(response.data?.person || person);
+    } catch (error) {
+      showToast(error?.response?.data?.message || 'Could not load person profile', 'error');
+    } finally {
+      setAdminPersonLoading(false);
+    }
+  };
+
   const deletePerson = async (personId) => {
     if (!window.confirm('Delete this person and their credits?')) return;
     try {
       await personApi.remove(personId);
       setPeople((current) => current.filter((person) => person.person_id !== personId));
+      setSelectedAdminPerson((current) => current?.person_id === personId ? null : current);
       showToast('Person deleted');
     } catch (error) {
       showToast(error?.response?.data?.message || 'Person deletion failed', 'error');
@@ -1203,6 +1447,7 @@ function App() {
   };
 
   const goToWatchlists = () => {
+    if (user?.role === 'admin') return;
     setSelectedWatchlist(null);
     setActiveNav('Watchlist');
     window.location.hash = '/watchlists';
@@ -1267,6 +1512,7 @@ function App() {
   };
 
   const goToDashboardTab = (tab) => {
+    if (user?.role === 'admin') return;
     setDashboardTab(tab);
     setActiveNav(tab === 'Profile' ? 'Dashboard' : tab);
     const nextRoute = tab === 'Profile' ? '/profile' : `/${tab.toLowerCase()}`;
@@ -1391,6 +1637,12 @@ function App() {
       );
     }
 
+    const personRoute = route.match(/^\/person\/(?:tmdb\/)?(\d+)$/);
+    if (personRoute) {
+      const isTmdbPerson = route.startsWith('/person/tmdb/');
+      return <PersonDetail personId={isTmdbPerson ? null : Number(personRoute[1])} tmdbId={isTmdbPerson ? Number(personRoute[1]) : null} onBack={() => { setRoute('/'); }} onMovieOpen={handleMovieOpen} onPersonOpen={handlePersonOpen} />;
+    }
+
     if (route === '/watchlists') {
       return renderWatchlistsPage();
     }
@@ -1474,9 +1726,9 @@ function App() {
                     <tr><th className="px-3 py-3">Poster</th><th className="px-3 py-3">Title</th><th className="px-3 py-3">Release Year</th><th className="px-3 py-3">Duration</th><th className="px-3 py-3">Language</th><th className="px-3 py-3">Rating</th><th className="px-3 py-3">Actions</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/80">
-                    {loading.movies ? Array.from({ length: 4 }).map((_, index) => (
+                    {adminMovieLoading ? Array.from({ length: 4 }).map((_, index) => (
                       <tr key={`movie-skeleton-${index}`}><td colSpan="7" className="px-3 py-5"><div className="h-5 animate-pulse rounded bg-slate-800" /></td></tr>
-                    )) : movies.filter((movie) => (movie.title || '').toLowerCase().includes(movieSearch.trim().toLowerCase())).map((movie) => {
+                    )) : (adminSearchResults ?? adminMovies).map((movie) => {
                       const movieId = movie.movie_id || movie.id;
                       return (
                         <tr key={movieId} className="text-slate-300">
@@ -1488,6 +1740,7 @@ function App() {
                           <td className="px-3 py-3 text-amber-300">{toDisplayNumber(movie.rating)}</td>
                           <td className="px-3 py-3"><div className="flex flex-wrap gap-2">
                             <button type="button" onClick={() => handleMovieOpen(movieId)} className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-400/70"><MonitorPlay className="h-3.5 w-3.5" /> View</button>
+                            <button type="button" onClick={() => handleMovieOpen(movieId)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Manage Images</button>
                             <button type="button" onClick={() => editMovie(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Edit</button>
                             <button type="button" onClick={() => openAssociationModal(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Genres & Platforms</button>
                             <button type="button" onClick={() => openAssignModal(movie)} className="rounded-full border border-cyan-400/40 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-400/10">Assign Cast/Crew</button>
@@ -1498,7 +1751,7 @@ function App() {
                     })}
                   </tbody>
                 </table>
-                {!movies.length && <div className="py-10 text-center text-slate-500">No movies found.</div>}
+                {!(adminSearchResults ?? adminMovies).length && <div className="py-10 text-center text-slate-500">No movies found.</div>}
               </div>
             </div>
           )}
@@ -1551,7 +1804,7 @@ function App() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {platforms.length ? platforms.map((platform) => (
                     <div key={platform.platform_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/40 p-3">
-                      <div className="flex min-w-0 items-center gap-3">{platform.logo_url ? <img src={platform.logo_url} alt="" className="h-9 w-9 rounded object-cover" /> : <Tv className="h-5 w-5 text-cyan-300" />}<span className="truncate font-semibold text-white">{platform.name}</span></div>
+                      {platform.url ? <a href={platform.url.startsWith('http') ? platform.url : `https://${platform.url}`} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-3 hover:text-cyan-200" title={`Open ${platform.name}`}><div className="flex min-w-0 items-center gap-3">{platform.logo_url ? <img src={platform.logo_url} alt="" className="h-9 w-9 rounded object-cover" /> : <Tv className="h-5 w-5 text-cyan-300" />}<span className="truncate font-semibold text-white">{platform.name}</span></div></a> : <div className="flex min-w-0 items-center gap-3">{platform.logo_url ? <img src={platform.logo_url} alt="" className="h-9 w-9 rounded object-cover" /> : <Tv className="h-5 w-5 text-cyan-300" />}<span className="truncate font-semibold text-white">{platform.name}</span></div>}
                       <div className="flex gap-2"><button type="button" onClick={() => editPlatform(platform)} className="text-xs text-cyan-300 hover:text-cyan-200">Edit</button><button type="button" onClick={() => deletePlatform(platform.platform_id)} className="text-xs text-rose-300 hover:text-rose-200">Delete</button></div>
                     </div>
                   )) : <p className="text-sm text-slate-400">No platforms found.</p>}
@@ -1566,7 +1819,27 @@ function App() {
                 <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">People catalog</p><h3 className="mt-2 text-xl font-bold text-white">{editingPersonId ? 'Edit cast or crew' : 'Add cast or crew'}</h3>
                 <div className="mt-4 space-y-3">{['name', 'birth_date', 'profile_url'].map((field) => <input key={field} type={field === 'birth_date' ? 'date' : field === 'profile_url' ? 'url' : 'text'} value={personForm[field]} onChange={(event) => setPersonForm((current) => ({ ...current, [field]: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder={field.replace('_', ' ')} required={field === 'name'} />)}<textarea value={personForm.biography} onChange={(event) => setPersonForm((current) => ({ ...current, biography: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white" placeholder="Biography" rows="3" /><select value={personForm.person_type} onChange={(event) => setPersonForm((current) => ({ ...current, person_type: event.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-white"><option value="actor">Actor</option><option value="director">Director</option><option value="writer">Writer</option><option value="producer">Producer</option></select><button type="submit" className="w-full rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-3 font-semibold text-slate-950">{editingPersonId ? 'Save person' : 'Create person'}</button>{editingPersonId && <button type="button" onClick={() => { setEditingPersonId(null); setPersonForm({ name: '', birth_date: '', biography: '', profile_url: '', person_type: 'actor' }); }} className="w-full rounded-full border border-slate-700 px-4 py-3 text-sm text-slate-300">Cancel edit</button>}</div>
               </form>
-              <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Cast and crew</p><h3 className="mt-2 text-2xl font-bold text-white">Manage people and assign credits</h3><p className="mt-2 max-w-xl text-slate-400">Choose a movie in Manage Movies to assign an existing person.</p><div className="mt-5 grid gap-3 sm:grid-cols-2">{people.map((person) => <div key={person.person_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/40 p-3"><span className="truncate text-sm font-semibold text-white">{person.name}</span><div className="flex gap-3"><button type="button" onClick={() => editPerson(person)} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={() => deletePerson(person.person_id)} className="text-xs text-rose-300">Delete</button></div></div>)}</div></div>
+              <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Cast and crew</p>
+                {adminPersonLoading ? <div className="mt-6 skeleton h-64 rounded-2xl" /> : selectedAdminPerson ? (
+                  <div className="mt-4">
+                    <button type="button" onClick={() => setSelectedAdminPerson(null)} className="text-sm text-cyan-300 hover:text-cyan-200">Back to people</button>
+                    <div className="mt-4 flex flex-col gap-5 sm:flex-row">
+                      <img src={selectedAdminPerson.profile_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde'} alt={selectedAdminPerson.name} className="h-48 w-36 rounded-2xl object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-3"><h3 className="text-2xl font-bold text-white">{selectedAdminPerson.name}</h3><span className="rounded-full border border-cyan-400/40 px-2.5 py-1 text-xs capitalize text-cyan-200">{selectedAdminPerson.person_type || 'person'}</span></div>
+                        <p className="mt-2 text-sm text-slate-400">{selectedAdminPerson.birth_date ? new Date(selectedAdminPerson.birth_date).toLocaleDateString() : 'Birth date not available'}</p>
+                        <p className="mt-4 text-sm leading-6 text-slate-300">{selectedAdminPerson.biography || 'No biography available.'}</p>
+                        <button type="button" onClick={() => editPerson(selectedAdminPerson)} className="mt-4 rounded-full border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-200 hover:bg-cyan-400/10">Edit profile</button>
+                      </div>
+                    </div>
+                    <h4 className="mt-6 font-semibold text-white">Filmography</h4>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-3">{(selectedAdminPerson.movies || []).map((movie) => <div key={`${movie.movie_id}-${movie.credit_type}`} className="rounded-xl border border-slate-700 bg-slate-900/50 p-2"><img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt={movie.title} className="aspect-[3/4] w-full rounded-lg object-cover" /><p className="mt-2 truncate text-xs font-semibold text-white">{movie.title}</p><p className="text-[11px] capitalize text-slate-400">{movie.credit_type || 'credit'}</p></div>)}</div>
+                  </div>
+                ) : (
+                  <><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="mt-2 text-2xl font-bold text-white">Manage people and assign credits</h3><p className="mt-2 max-w-xl text-slate-400">Click a person to view their profile, biography, and filmography.</p></div><input value={personSearch} onChange={(event) => setPersonSearch(event.target.value)} placeholder="Search people" className="w-full rounded-full border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm text-white outline-none focus:border-cyan-400/80 sm:w-56" /></div><div className="mt-5 grid gap-3 sm:grid-cols-2">{peopleLoading ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="skeleton h-14 rounded-2xl" />) : visiblePeople.map((person) => <div key={person.person_id} role="button" tabIndex={0} onClick={() => openAdminPerson(person)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openAdminPerson(person); } }} className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/40 p-3 transition hover:border-cyan-400/60"><span className="truncate text-sm font-semibold text-white">{person.name}</span><div className="flex gap-3"><button type="button" onClick={(event) => { event.stopPropagation(); editPerson(person); }} className="text-xs text-cyan-300">Edit</button><button type="button" onClick={(event) => { event.stopPropagation(); deletePerson(person.person_id); }} className="text-xs text-rose-300">Delete</button></div></div>)}{!peopleLoading && !visiblePeople.length && <p className="col-span-full py-8 text-center text-sm text-slate-400">No people found.</p>}</div></>
+                )}
+              </div>
             </div>
           )}
 
@@ -1831,6 +2104,8 @@ function App() {
                       ))}
                     </div>
 
+                    {(selectedMovie.production_companies || []).length > 0 && <p className="text-sm text-slate-300"><span className="font-semibold text-slate-400">Production:</span> {selectedMovie.production_companies.map((company) => company.name).join(', ')}</p>}
+
                     <div className="flex flex-wrap items-center gap-3">
                       <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">{selectedMovie.title}</h1>
                       <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-500/10 px-2.5 py-1 text-sm font-semibold text-amber-300"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{toDisplayNumber(selectedMovie.average_rating || selectedMovie.rating)}</span>
@@ -1874,7 +2149,7 @@ function App() {
                         { name: 'Cast not available', role: 'Data pending' },
                         { name: 'Crew not available', role: 'Data pending' },
                       ]).map((person, index) => (
-                        <div key={`${person.name}-${index}`} className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3">
+                        <button key={`${person.name}-${index}`} type="button" onClick={() => person.person_id && handlePersonOpen(person)} disabled={!person.person_id} className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3 text-left transition hover:border-cyan-400/60 disabled:cursor-default">
                           {person.profile_url ? (
                             <img src={person.profile_url} alt={person.name} className="aspect-[2/3] w-full rounded-2xl object-cover" />
                           ) : (
@@ -1883,7 +2158,7 @@ function App() {
                             </div>
                           )}
                           <div className="mt-3"><p className="font-semibold text-white">{person.name}</p><p className="text-sm text-slate-400">{person.role || person.character_name || 'Crew member'}</p></div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -1913,7 +2188,7 @@ function App() {
                               <div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-indigo-500 text-sm font-bold text-slate-950">{review.user_name?.[0]?.toUpperCase() || 'V'}</div><div><p className="font-semibold text-white">{review.user_name || review.user || 'Viewer'}</p><p className="text-xs text-slate-400">{timeAgo(review.created_at)}</p></div></div>
                               <div className="flex items-center gap-2"><span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-sm font-semibold text-amber-300"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{toDisplayNumber(review.rating)}</span>{review.user_id === user?.user_id && <><button type="button" onClick={() => beginReviewEdit(review)} className="text-xs text-cyan-300">Edit</button>{deleteReviewId === review.review_id ? <><button type="button" onClick={() => deleteReview(review.review_id)} className="text-xs font-semibold text-rose-300">Yes</button><button type="button" onClick={() => setDeleteReviewId(null)} className="text-xs text-slate-400">Cancel</button></> : <button type="button" onClick={() => setDeleteReviewId(review.review_id)} className="text-xs text-rose-300">Delete</button>}</>}</div>
                             </div>
-                            <p className="mt-3 text-sm leading-6 text-slate-300">{review.review_text || 'No review text provided.'}</p>
+                            <p className="mt-3 text-sm leading-6 text-slate-300">{getVisibleReviewText(review)}</p>
                           </>
                         )}
                       </div>
@@ -2018,7 +2293,7 @@ function App() {
           </section>
         )}
 
-        {['/', '/history', '/friends'].includes(route) && (
+        {['/history', '/friends'].includes(route) && (
           <section ref={dashboardSectionRef} className="mt-8">
             <div className="glass-panel rounded-[28px] border border-slate-800/80 p-4">
               <div className="flex flex-wrap gap-2 md:hidden">
@@ -2075,20 +2350,20 @@ function App() {
 
             {dashboardTab === 'Friends' && (
               <div className="mt-6 grid gap-5 lg:grid-cols-2">
-                <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                <div className="glass-panel relative z-40 rounded-[28px] border border-slate-800/80 p-5">
                   <h2 className="text-xl font-bold text-white">Add a friend</h2>
-                  <form onSubmit={sendFriendRequest} className="mt-4 flex flex-col gap-3 sm:flex-row">
-                    <div className="relative min-w-0 flex-1"><input type="text" value={friendEmail} onChange={(event) => { setFriendEmail(event.target.value); setSelectedFriend(null); }} placeholder="Search by name or username" className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/45 px-3 py-2 text-sm text-white placeholder:text-slate-400 focus:border-cyan-400/80 focus:outline-none" />{friendSuggestions.length > 0 && <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">{friendSuggestions.map((candidate) => <button key={candidate.user_id} type="button" onClick={() => { setSelectedFriend(candidate); setFriendEmail(candidate.display_name || candidate.name); setFriendSuggestions([]); }} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-800"><img src={normalizeImage(candidate.profile_image)} alt="" className="h-8 w-8 rounded-full object-cover" /><span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{candidate.display_name || candidate.name}</span><span className="block truncate text-xs text-slate-400">@{candidate.username || candidate.name}</span></span></button>)}</div>}</div>
+                  <form onSubmit={sendFriendRequest} className="relative z-30 mt-4 flex flex-col gap-3 sm:flex-row">
+                    <div ref={friendSearchRef} className="relative min-w-0 flex-1"><input type="text" value={friendEmail} onChange={(event) => { setFriendEmail(event.target.value); setSelectedFriend(null); }} placeholder="Search by name or username" className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/45 px-3 py-2 text-sm text-white placeholder:text-slate-400 focus:border-cyan-400/80 focus:outline-none" />{friendSuggestions.length > 0 && <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">{friendSuggestions.map((candidate) => <button key={candidate.user_id} type="button" onClick={() => { setFriendSuggestions([]); setFriendEmail(candidate.display_name || candidate.name || candidate.username); setSelectedFriend(candidate); }} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-800"><img src={normalizeImage(candidate.profile_image)} alt="" className="h-8 w-8 rounded-full object-cover" /><span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{candidate.display_name || candidate.name}</span><span className="block truncate text-xs text-slate-400">@{candidate.username || candidate.name}</span></span></button>)}</div>}</div>
                     <button type="submit" className="rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-sm font-semibold text-slate-950">Send request</button>
                   </form>
                 </div>
 
-                <div className="glass-panel rounded-[28px] border border-slate-800/80 p-5">
+                <div className="glass-panel relative z-10 rounded-[28px] border border-slate-800/80 p-5">
                   <h2 className="text-xl font-bold text-white">Pending requests received</h2>
                   <div className="mt-4 space-y-3">
                     {loading.friends ? <div className="skeleton h-16 rounded-2xl" /> : pendingRequests.length ? pendingRequests.map((request) => (
                       <div key={request.friendship_id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3">
-                        <div><p className="font-semibold text-white">{request.sender_name}</p><p className="text-sm text-slate-400">{request.sender_email}</p></div>
+                        <button type="button" onClick={() => goToUserProfile(request.sender_id)} className="min-w-0 text-left hover:text-cyan-200"><p className="font-semibold text-white">{request.sender_name}</p><p className="text-sm text-slate-400">{request.sender_email}</p></button>
                         <div className="flex gap-2"><button type="button" onClick={() => respondToFriendRequest(request.friendship_id, 'accepted')} className="rounded-full border border-cyan-400/50 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200">Accept</button><button type="button" onClick={() => respondToFriendRequest(request.friendship_id, 'rejected')} className="rounded-full border border-rose-400/50 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200">Reject</button></div>
                       </div>
                     )) : <p className="text-sm text-slate-400">No pending requests.</p>}
@@ -2100,7 +2375,7 @@ function App() {
                   <div className="mt-4 space-y-3">
                     {loading.friends ? <div className="skeleton h-16 rounded-2xl" /> : friends.length ? friends.map((friend) => (
                       <div key={friend.friendship_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3">
-                        <div><p className="font-semibold text-white">{friend.name}</p><p className="text-sm text-slate-400">{friend.email}</p></div>
+                        <button type="button" onClick={() => goToUserProfile(friend.user_id)} className="min-w-0 text-left hover:text-cyan-200"><p className="truncate font-semibold text-white">{friend.name}</p><p className="truncate text-sm text-slate-400">{friend.email}</p></button>
                         <button type="button" onClick={() => removeFriend(friend.friendship_id)} className="rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-rose-400/70 hover:text-rose-200">Remove</button>
                       </div>
                     )) : <p className="text-sm text-slate-400">No friends yet. Send a request to connect.</p>}
@@ -2112,7 +2387,7 @@ function App() {
                   <div className="mt-4 space-y-3">
                     {loading.friends ? <div className="skeleton h-16 rounded-2xl" /> : sentRequests.length ? sentRequests.map((request) => (
                       <div key={request.friendship_id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/45 p-3">
-                        <div><p className="font-semibold text-white">{request.recipient_name}</p><p className="text-sm text-slate-400">{request.recipient_email}</p></div>
+                        <button type="button" onClick={() => goToUserProfile(request.recipient_id)} className="min-w-0 text-left hover:text-cyan-200"><p className="font-semibold text-white">{request.recipient_name}</p><p className="text-sm text-slate-400">{request.recipient_email}</p></button>
                         <button type="button" onClick={() => removeFriend(request.friendship_id)} className="rounded-full border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-rose-400/70 hover:text-rose-200">Cancel</button>
                       </div>
                     )) : <p className="text-sm text-slate-400">No sent requests.</p>}
@@ -2145,23 +2420,27 @@ function App() {
                 onChange={(event) => setSearchTerm(event.target.value)}
                 onFocus={() => setSearchOpen(true)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter' && searchSuggestions[0]) { setSearchOpen(false); setSearchTerm(''); handleMovieOpen(searchSuggestions[0].movie_id); }
+                  if (event.key === 'Enter' && searchSuggestions[0]) {
+                    setSearchOpen(false);
+                    if (searchSuggestions[0].suggestionType === 'movie') handleMovieOpen(searchSuggestions[0].movie_id);
+                    else handlePersonOpen(searchSuggestions[0]);
+                  }
                 }}
                 placeholder="Search titles, genres..."
                 className="w-full bg-transparent text-sm text-white placeholder:text-slate-400 focus:outline-none"
               />
               {searchOpen && searchSuggestions.length > 0 && (
                 <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950/95 p-1 shadow-2xl">
-                  {searchSuggestions.map((movie) => (
+                  {searchSuggestions.map((suggestion) => (
                     <button
-                      key={movie.movie_id}
+                      key={`${suggestion.suggestionType}-${suggestion.movie_id || suggestion.person_id}`}
                       type="button"
-                      onClick={() => { setSearchOpen(false); setSearchTerm(''); handleMovieOpen(movie.movie_id); }}
+                      onClick={() => { setSearchOpen(false); if (suggestion.suggestionType === 'movie') { setSearchTerm(''); handleMovieOpen(suggestion.movie_id); } else handlePersonOpen(suggestion); }}
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-cyan-400/10 hover:text-white"
                     >
-                      <img src={movie.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt="" className="h-10 w-7 rounded object-cover" />
-                      <span className="min-w-0 flex-1 truncate">{movie.title}</span>
-                      <span className="text-xs text-amber-300">{toDisplayNumber(movie.average_rating || movie.rating)}</span>
+                      {suggestion.suggestionType === 'movie' ? <img src={suggestion.poster_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c'} alt="" className="h-10 w-7 rounded object-cover" /> : <img src={suggestion.profile_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde'} alt="" className="h-10 w-7 rounded object-cover" />}
+                      <span className="min-w-0 flex-1 truncate">{suggestion.suggestionType === 'movie' ? suggestion.title : suggestion.name}</span>
+                      <span className="text-xs text-cyan-300">{suggestion.suggestionType === 'movie' ? toDisplayNumber(suggestion.average_rating || suggestion.rating) : (suggestion.person_type || 'People')}</span>
                     </button>
                   ))}
                 </div>
@@ -2184,25 +2463,24 @@ function App() {
           {token && (
             <nav className="hidden items-center gap-6 text-sm text-slate-300 xl:flex">
               <button type="button" onClick={() => { setActiveNav('Home'); setDashboardTab('Profile'); window.location.hash = '/'; setRoute('/'); }} className={`rounded-full px-3 py-2 transition ${activeNav === 'Home' ? 'bg-cyan-400/15 text-cyan-200' : 'hover:bg-slate-800/60 hover:text-white'}`}>Home</button>
-              <button type="button" onClick={() => { setActiveNav('Dashboard'); setDashboardTab('Profile'); if (user?.role === 'admin') { window.location.hash = '/admin'; setRoute('/admin'); } else { window.location.hash = '/'; setRoute('/'); } }} className={`rounded-full px-3 py-2 transition ${activeNav === 'Dashboard' ? 'bg-cyan-400/15 text-cyan-200' : 'hover:bg-slate-800/60 hover:text-white'}`}>Dashboard</button>
-              <button type="button" onClick={() => { setActiveNav('Trending'); setDashboardTab('Profile'); setSortBy('rating'); window.location.hash = '/'; setRoute('/'); }} className={`rounded-full px-3 py-2 transition ${activeNav === 'Trending' ? 'bg-cyan-400/15 text-cyan-200' : 'hover:bg-slate-800/60 hover:text-white'}`}>Trending</button>
             </nav>
           )}
 
           {token && (
             <div className="ml-auto hidden items-center gap-3 md:flex">
-              <button type="button" onClick={goToWatchlists} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Watchlist' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Watchlist</button>
-              <button type="button" onClick={() => goToDashboardTab('History')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'History' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>History</button>
-              <button type="button" onClick={() => goToDashboardTab('Friends')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Friends' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Friends</button>
-              <button type="button" onClick={goToProfile} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${activeNav === 'Profile' ? 'border-cyan-400/80 bg-cyan-400 text-slate-950 hover:bg-cyan-300' : 'border-transparent bg-slate-100 text-slate-900 hover:bg-white'}`}>
-                    {user?.profile_image ? <img src={normalizeImage(user.profile_image)} alt="" className="h-6 w-6 rounded-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : <UserRound className="h-4 w-4" />}
-                {user ? (user.display_name || user.name) : 'Profile'}
+              {user?.role !== 'admin' && <>
+                <button type="button" onClick={goToWatchlists} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Watchlist' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Watchlist</button>
+                <button type="button" onClick={() => goToDashboardTab('History')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'History' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>History</button>
+                <button type="button" onClick={() => goToDashboardTab('Friends')} className={`rounded-full border px-3 py-2 text-sm transition ${activeNav === 'Friends' ? 'border-cyan-400/80 bg-cyan-500/15 text-cyan-200' : 'border-slate-700/80 bg-slate-900/50 text-slate-200 hover:border-cyan-400/80 hover:text-white'}`}>Friends</button>
+              </>}
+              <button type="button" onClick={goToProfile} title="Open profile" aria-label="Open profile" className={`flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border p-0 transition ${activeNav === 'Profile' ? 'border-cyan-400/80 bg-cyan-400 text-slate-950 hover:bg-cyan-300' : 'border-slate-300/20 bg-slate-100 text-slate-900 hover:bg-white'}`}>
+                {user?.profile_image ? <img src={normalizeImage(user.profile_image)} alt="Profile" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : <UserRound className="h-5 w-5" />}
               </button>
             </div>
           )}
 
           <div className="ml-auto flex items-center gap-2 md:ml-0">
-            {token && <div className="relative md:hidden"><button type="button" onClick={() => setMobileMenuOpen((current) => !current)} className="rounded-full border border-slate-700/80 bg-slate-900/40 p-2 text-slate-200" aria-label="Open navigation"><Menu className="h-4 w-4" /></button>{mobileMenuOpen && <div className="absolute right-0 top-12 z-50 grid w-48 gap-1 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl"><button type="button" onClick={() => { setMobileMenuOpen(false); setActiveNav('Home'); setRoute('/'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Home</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToWatchlists(); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Watchlist</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToDashboardTab('History'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">History</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToDashboardTab('Friends'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Friends</button>{user?.role === 'admin' && <button type="button" onClick={() => { setMobileMenuOpen(false); setRoute('/admin'); }} className="rounded-xl px-3 py-2 text-left text-sm text-cyan-200 hover:bg-slate-800">Admin</button>}</div>}</div>}
+            {token && <div className="relative md:hidden"><button type="button" onClick={() => setMobileMenuOpen((current) => !current)} className="rounded-full border border-slate-700/80 bg-slate-900/40 p-2 text-slate-200" aria-label="Open navigation"><Menu className="h-4 w-4" /></button>{mobileMenuOpen && <div className="absolute right-0 top-12 z-50 grid w-48 gap-1 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl"><button type="button" onClick={() => { setMobileMenuOpen(false); setActiveNav('Home'); setRoute('/'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Home</button>{user?.role !== 'admin' && <><button type="button" onClick={() => { setMobileMenuOpen(false); goToWatchlists(); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Watchlist</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToDashboardTab('History'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">History</button><button type="button" onClick={() => { setMobileMenuOpen(false); goToDashboardTab('Friends'); }} className="rounded-xl px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800">Friends</button></>}{user?.role === 'admin' && <button type="button" onClick={() => { setMobileMenuOpen(false); setRoute('/admin'); }} className="rounded-xl px-3 py-2 text-left text-sm text-cyan-200 hover:bg-slate-800">Admin</button>}</div>}</div>}
             {token && <div ref={notificationMenuRef} className="relative">
               <button type="button" onClick={() => setNotificationsOpen((current) => !current)} className="relative rounded-full border border-slate-700/80 bg-slate-900/40 p-2 text-slate-200 transition hover:border-cyan-400/70 hover:text-white"><Bell className="h-4 w-4" />{unreadCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}</button>
               {notificationsOpen && <div className="glass-panel absolute right-0 top-12 z-50 w-80 rounded-2xl border border-slate-800/80 p-3 shadow-2xl sm:w-96">
@@ -2219,6 +2497,44 @@ function App() {
 
         {renderRoute()}
       </div>
+
+      {watchlistPickerMovie && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => { if (!watchlistSaving) setWatchlistPickerMovie(null); }}>
+          <div className="w-full max-w-md rounded-[28px] border border-slate-700 bg-slate-950 p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Save movie</p>
+                <h2 className="mt-2 text-xl font-bold text-white">Choose a watchlist</h2>
+                <p className="mt-1 truncate text-sm text-slate-400">{watchlistPickerMovie.title}</p>
+              </div>
+              <button type="button" onClick={() => setWatchlistPickerMovie(null)} disabled={watchlistSaving} className="rounded-full border border-slate-700 p-2 text-slate-400 hover:text-white disabled:opacity-50" aria-label="Close watchlist picker"><X className="h-4 w-4" /></button>
+            </div>
+
+            {watchlistPickerLoading ? (
+              <div className="mt-6 text-sm text-slate-400">Loading watchlists...</div>
+            ) : (
+              <>
+                <div className="mt-5 max-h-48 space-y-2 overflow-y-auto">
+                  {watchlists.length ? watchlists.map((list) => (
+                    <button key={list.watchlist_id} type="button" onClick={() => saveMovieToWatchlist(list.watchlist_id)} disabled={watchlistSaving} className="flex w-full items-center justify-between rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-3 text-left text-sm text-white transition hover:border-cyan-400/70 hover:bg-cyan-500/10 disabled:opacity-50">
+                      <span className="font-semibold">{list.name}</span>
+                      <span className="text-xs text-slate-400">{list.movie_count ?? list.movies?.length ?? 0} movies</span>
+                    </button>
+                  )) : <p className="rounded-2xl border border-dashed border-slate-700 p-4 text-sm text-slate-400">No watchlists yet. Create one below.</p>}
+                </div>
+
+                <div className="mt-5 border-t border-slate-800 pt-5">
+                  <p className="text-sm font-semibold text-white">Create a new watchlist</p>
+                  <div className="mt-3 flex gap-2">
+                    <input value={newWatchlistName} onChange={(event) => setNewWatchlistName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveMovieToWatchlist(); } }} placeholder="e.g. Weekend picks" className="min-w-0 flex-1 rounded-2xl border border-slate-700 bg-slate-900/60 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/80" />
+                    <button type="button" onClick={() => saveMovieToWatchlist()} disabled={watchlistSaving || !newWatchlistName.trim()} className="rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{watchlistSaving ? 'Saving...' : 'Create & save'}</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`fixed right-5 top-24 z-50 rounded-full border px-4 py-2 text-sm shadow-lg ${toast.type === 'error' ? 'border-rose-400/50 bg-rose-500/15 text-rose-100' : 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'}`}>

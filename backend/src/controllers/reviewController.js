@@ -1,4 +1,17 @@
 const pool = require("../config/db");
+const { isSpoilerReview } = require("../utils/spoilerUtils");
+
+const formatReviewForViewer = (review, viewerUserId) => {
+    const reviewText = typeof review.review_text === "string" ? review.review_text : "";
+    const isSpoiler = isSpoilerReview(reviewText);
+    const isOwner = viewerUserId !== null && viewerUserId !== undefined && Number(review.user_id) === Number(viewerUserId);
+
+    return {
+        ...review,
+        is_spoiler: isSpoiler,
+        review_text: isSpoiler && !isOwner ? "This review contains spoilers and is hidden for safety." : reviewText,
+    };
+};
 
 exports.getMovieReviews = async (req, res) => {
     const { movieId } = req.params;
@@ -21,7 +34,10 @@ exports.getMovieReviews = async (req, res) => {
             [movieId]
         );
 
-        res.status(200).json({ reviews: result.rows, summary: summary.rows[0] });
+        const viewerUserId = req.user?.user_id ?? null;
+        const reviews = result.rows.map((review) => formatReviewForViewer(review, viewerUserId));
+
+        res.status(200).json({ reviews, summary: summary.rows[0] });
     } catch (error) {
         console.error("GET MOVIE REVIEWS ERROR:", error);
         res.status(500).json({ message: "Server error while fetching reviews", error: error.message });
@@ -37,6 +53,10 @@ exports.createReview = async (req, res) => {
 
     if (typeof review_text !== "string" || !review_text.trim()) {
         return res.status(400).json({ message: "Review text cannot be empty" });
+    }
+
+    if (isSpoilerReview(review_text)) {
+        return res.status(400).json({ message: "Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review." });
     }
 
     if (Number.isNaN(Number(rating)) || Number(rating) < 0 || Number(rating) > 10) {
@@ -55,6 +75,10 @@ exports.createReview = async (req, res) => {
         const result = await client.query(
             `INSERT INTO reviews (movie_id, user_id, rating, review_text)
              VALUES ($1, $2, $3, $4)
+             ON CONFLICT (user_id, movie_id)
+             DO UPDATE SET rating = EXCLUDED.rating,
+                           review_text = EXCLUDED.review_text,
+                           created_at = CURRENT_TIMESTAMP
              RETURNING *`,
             [movie_id, req.user.user_id, rating, review_text.trim()]
         );
@@ -63,10 +87,6 @@ exports.createReview = async (req, res) => {
         res.status(201).json({ message: "Review added successfully", review: result.rows[0] });
     } catch (error) {
         await client.query("ROLLBACK");
-        if (error.code === "23505") {
-            return res.status(409).json({ message: "You have already reviewed this movie" });
-        }
-
         console.error("CREATE REVIEW ERROR:", error);
         res.status(500).json({ message: "Server error while creating review", error: error.message });
     } finally {
@@ -84,6 +104,10 @@ exports.updateReview = async (req, res) => {
 
     if (typeof review_text !== "string" || !review_text.trim()) {
         return res.status(400).json({ message: "Review text cannot be empty" });
+    }
+
+    if (isSpoilerReview(review_text)) {
+        return res.status(400).json({ message: "Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review." });
     }
 
     if (Number.isNaN(Number(rating)) || Number(rating) < 0 || Number(rating) > 10) {

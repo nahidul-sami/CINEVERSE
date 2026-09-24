@@ -86,6 +86,17 @@ function PublicProfilePage({ userId, currentUser, friends, pendingRequests, sent
   const recentReviews = profile.recentReviews || [];
   const watchlists = profile.watchlists || [];
 
+  const getVisibleReviewText = (review) => {
+    const rawText = review?.review_text || 'No review text provided.';
+    if (
+      review?.is_spoiler ||
+      /\bspoiler\b|\bplot twist\b|\bmajor twist\b|\bfinal reveal\b|\bending reveal\b|\b(?:big|major|final|ending|surprise)\s+reveal\b|\b(?:rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man)\s+(?:dies?|gets killed)\b|\b(?:dies?|gets killed)\s+(?:in|during|at|before)\s+(?:this|the)\s+(?:movie|film|show|series|episode)\b/i.test(rawText)
+    ) {
+      return 'This review contains spoilers and is hidden for safety.';
+    }
+    return rawText;
+  };
+
   const friendButtonText = relationship === 'friends' ? 'Friends' : relationship === 'sent' ? 'Request sent' : relationship === 'received' ? 'Accept request' : 'Add friend';
 
   return (
@@ -155,15 +166,24 @@ function PublicProfilePage({ userId, currentUser, friends, pendingRequests, sent
             <h2 className="text-xl font-bold text-white">Reviews</h2>
             {recentReviews.length ? (
               <div className="mt-4 space-y-3">
-                {recentReviews.map((review) => (
-                  <div key={review.review_id} className="rounded-2xl border border-slate-800 bg-slate-900/45 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-white">{review.title}</p>
-                      <span className="rounded-full bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">{Number(review.rating).toFixed(1)}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-300">{review.review_text || 'No review text provided.'}</p>
-                  </div>
-                ))}
+                {recentReviews.map((review) => {
+                  const reviewText = getVisibleReviewText(review);
+
+                  return (
+                    <button
+                      key={review.review_id}
+                      type="button"
+                      onClick={() => window.location.hash = `/movie/${review.movie_id}`}
+                      className="w-full rounded-2xl border border-slate-800 bg-slate-900/45 p-3 text-left transition hover:border-cyan-400/60 hover:bg-slate-900/70"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-semibold text-white">{review.title}</p>
+                        <span className="rounded-full bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300">{Number(review.rating).toFixed(1)}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-300">{reviewText}</p>
+                    </button>
+                  );
+                })}
               </div>
             ) : <p className="mt-4 text-sm text-slate-400">No reviews yet.</p>}
           </div>
