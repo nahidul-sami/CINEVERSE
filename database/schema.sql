@@ -205,6 +205,7 @@ CREATE TABLE reviews (
     user_id INT NOT NULL,
     rating DECIMAL(3,1) NOT NULL,
     review_text TEXT,
+    is_spoiler BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_reviews_movie

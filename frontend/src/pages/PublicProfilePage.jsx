@@ -88,10 +88,8 @@ function PublicProfilePage({ userId, currentUser, friends, pendingRequests, sent
 
   const getVisibleReviewText = (review) => {
     const rawText = review?.review_text || 'No review text provided.';
-    if (
-      review?.is_spoiler ||
-      /\bspoiler\b|\bplot twist\b|\bmajor twist\b|\bfinal reveal\b|\bending reveal\b|\b(?:big|major|final|ending|surprise)\s+reveal\b|\b(?:rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man)\s+(?:dies?|gets killed)\b|\b(?:dies?|gets killed)\s+(?:in|during|at|before)\s+(?:this|the)\s+(?:movie|film|show|series|episode)\b/i.test(rawText)
-    ) {
+    const isOwner = Number(review?.user_id) === Number(currentUser?.user_id);
+    if (!isOwner && review?.is_spoiler) {
       return 'This review contains spoilers and is hidden for safety.';
     }
     return rawText;

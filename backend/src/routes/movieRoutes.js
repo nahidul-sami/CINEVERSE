@@ -1,12 +1,27 @@
 const express = require("express");
 const router = express.Router();
-const { getAllMovies, searchMovies, getRecommendations, getMovieById, createMovie, createMovieWithCredits, updateMovie, addMovieImage, deleteMovieImage, deleteMovie } = require("../controllers/movieController");
+const {
+    getAllMovies,
+    searchMovies,
+    getRecommendations,
+    getTopRatedMovies,
+    getLandingMovies,
+    getMovieById,
+    createMovie,
+    createMovieWithCredits,
+    updateMovie,
+    addMovieImage,
+    deleteMovieImage,
+    deleteMovie
+} = require("../controllers/movieController");
 const { verifyToken, verifyAdmin } = require("../middleware/authMiddleware");
 
-router.get("/", getAllMovies);
-router.get("/search", searchMovies);
+router.get("/", verifyToken, getAllMovies);
+router.get("/search", verifyToken, searchMovies);
 router.get("/recommendations", verifyToken, getRecommendations);
-router.get("/:id", getMovieById);
+router.get("/top-rated", verifyToken, getTopRatedMovies);
+router.get("/landing", getLandingMovies);
+router.get("/:id", verifyToken, getMovieById);
 router.post("/", verifyToken, verifyAdmin, createMovie);
 router.post("/with-credits", verifyToken, verifyAdmin, createMovieWithCredits);
 router.put("/:id", verifyToken, verifyAdmin, updateMovie);

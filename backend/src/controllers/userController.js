@@ -76,7 +76,7 @@ const getRecentWatched = async (userId) => {
 
 const getRecentReviews = async (userId, viewerUserId = null) => {
     const result = await pool.query(
-        `SELECT r.review_id, r.movie_id, r.user_id, r.rating, r.review_text, r.created_at,
+        `SELECT r.review_id, r.movie_id, r.user_id, r.rating, r.review_text, r.is_spoiler, r.created_at,
                 m.title, m.poster_url
          FROM reviews r
          JOIN movies m ON m.movie_id = r.movie_id
@@ -87,12 +87,12 @@ const getRecentReviews = async (userId, viewerUserId = null) => {
 
     return result.rows.map((review) => {
         const reviewText = typeof review.review_text === "string" ? review.review_text : "";
-        const isSpoiler = isSpoilerReview(reviewText);
+        const isSpoiler = Boolean(review.is_spoiler) || isSpoilerReview(reviewText);
         const isOwner = viewerUserId !== null && viewerUserId !== undefined && Number(review.user_id) === Number(viewerUserId);
 
         return {
             ...review,
-            is_spoiler: isSpoiler,
+            is_spoiler: Boolean(review.is_spoiler) || isSpoiler,
             review_text: isSpoiler && !isOwner ? "This review contains spoilers and is hidden for safety." : reviewText,
         };
     });

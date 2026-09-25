@@ -12,17 +12,14 @@ const {
 } = require("../controllers/genreController");
 const { verifyToken, verifyAdmin } = require("../middleware/authMiddleware");
 
-// Public routes
-router.get("/", getAllGenres);
-router.get("/:id", getGenreById);
-router.get("/:genreId/movies", getMoviesByGenre); 
+router.get("/", verifyToken, getAllGenres);
+router.get("/:genreId/movies", verifyToken, getMoviesByGenre);
+router.get("/:id", verifyToken, getGenreById);
 
-// Admin restricted routes
 router.post("/", verifyToken, verifyAdmin, createGenre);
 router.put("/:id", verifyToken, verifyAdmin, updateGenre);
 router.delete("/:id", verifyToken, verifyAdmin, deleteGenre);
 
-// Movie & Genre Association routes (Admin only)
 router.post("/movies/:movieId", verifyToken, verifyAdmin, addGenreToMovie);
 router.delete("/movies/:movieId/:genreId", verifyToken, verifyAdmin, removeGenreFromMovie);
 module.exports = router;

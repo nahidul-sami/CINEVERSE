@@ -118,6 +118,44 @@ exports.getRecommendations = async (req, res) => {
     }
 };
 
+exports.getTopRatedMovies = async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT m.movie_id, m.title, m.poster_url, m.release_year, m.rating, m.average_rating,
+                    COUNT(r.review_id)::int AS review_count,
+                    ROUND(AVG(r.rating), 2) AS avg_rating
+             FROM movies m
+             LEFT JOIN reviews r ON r.movie_id = m.movie_id
+             GROUP BY m.movie_id
+             ORDER BY avg_rating DESC NULLS LAST, review_count DESC, m.movie_id DESC
+             LIMIT 10`,
+            []
+        );
+
+        res.status(200).json({ movies: result.rows });
+    } catch (error) {
+        console.error("GET TOP RATED MOVIES ERROR:", error);
+        res.status(500).json({ message: "Server error while fetching top rated movies", error: error.message });
+    }
+};
+
+exports.getLandingMovies = async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT movie_id, title, poster_url
+             FROM movies
+             WHERE poster_url IS NOT NULL AND BTRIM(poster_url) <> ''
+             ORDER BY average_rating DESC NULLS LAST, rating DESC NULLS LAST, movie_id DESC
+             LIMIT 24`
+        );
+
+        res.status(200).json({ movies: result.rows });
+    } catch (error) {
+        console.error("GET LANDING MOVIES ERROR:", error);
+        res.status(500).json({ message: "Unable to load landing page movies" });
+    }
+};
+
 exports.getAllMovies = async (req, res) => {
     const { genre_id, q } = req.query;
     const search = typeof q === "string" ? q.trim() : "";
@@ -139,9 +177,12 @@ exports.getAllMovies = async (req, res) => {
 
         queryParams.push(limit);
         const query = `
-            SELECT DISTINCT m.*
+            SELECT DISTINCT m.*, g.name AS genre_name
             FROM movies m
-            ${genre_id ? "LEFT JOIN movie_genres mg ON m.movie_id = mg.movie_id" : ""}
+            ${genre_id ? "LEFT JOIN movie_genres mg ON m.movie_id = mg.movie_id" : "LEFT JOIN LATERAL (" +
+                "SELECT g.name FROM movie_genres mg2 JOIN genres g ON g.genre_id = mg2.genre_id WHERE mg2.movie_id = m.movie_id ORDER BY g.genre_id LIMIT 1" + 
+                ") g ON TRUE"}
+            ${genre_id ? "LEFT JOIN genres g ON g.genre_id = mg.genre_id" : ""}
             ${filters.length ? `WHERE ${filters.join(" AND ")}` : ""}
             ORDER BY m.average_rating DESC NULLS LAST, m.movie_id DESC
             LIMIT $${queryParams.length}
@@ -220,7 +261,9 @@ exports.createMovie = async (req, res) => {
         rating,
         poster_url,
         backdrop_url,
-        trailer_url
+        trailer_url,
+        genre_ids,
+        credits
     } = req.body;
 
     if (typeof title !== "string" || !title.trim() || typeof description !== "string" || !description.trim()) {
@@ -230,12 +273,14 @@ exports.createMovie = async (req, res) => {
     const metadataError = validateMovieMetadata({ release_year, duration, rating });
     if (metadataError) return res.status(400).json({ message: metadataError });
 
+    const genreIds = Array.isArray(genre_ids) ? genre_ids : [];
+    const movieCredits = Array.isArray(credits) ? credits : [];
+
+    const client = await pool.connect();
     try {
-        const newMovie = await pool.withTransaction((client) => client.query(
-            `INSERT INTO movies
-            (title, description, release_year, duration, language, rating, poster_url, backdrop_url, trailer_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING *`,
+        await client.query("BEGIN");
+        const result = await client.query(
+            `CALL add_movie_with_credits($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
                 title.trim(),
                 description.trim(),
@@ -244,15 +289,20 @@ exports.createMovie = async (req, res) => {
                 language || null,
                 rating === "" || rating === undefined ? null : rating,
                 poster_url || null,
-                backdrop_url || null,
-                trailer_url || null
+                trailer_url || null,
+                genreIds,
+                JSON.stringify(movieCredits)
             ]
-        ));
+        );
+        await client.query("COMMIT");
 
-        res.status(201).json({ message: "Movie added successfully", movie: newMovie.rows[0] });
+        res.status(201).json({ message: "Movie added successfully", movie: result.rows?.[0] || null });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("ADD MOVIE ERROR:", error);
         res.status(500).json({ message: "Server error while adding movie", error: error.message });
+    } finally {
+        client.release();
     }
 };
 
@@ -384,8 +434,10 @@ exports.createMovieWithCredits = async (req, res) => {
     const genreIds = Array.isArray(genre_ids) ? genre_ids : [];
     const movieCredits = Array.isArray(credits) ? credits : [];
 
+    const client = await pool.connect();
     try {
-        await pool.query(
+        await client.query("BEGIN");
+        await client.query(
             `CALL add_movie_with_credits($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
                 title.trim(),
@@ -400,10 +452,14 @@ exports.createMovieWithCredits = async (req, res) => {
                 JSON.stringify(movieCredits)
             ]
         );
+        await client.query("COMMIT");
 
         res.status(201).json({ message: "Movie with credits added successfully" });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("ADD MOVIE WITH CREDITS ERROR:", error);
         res.status(500).json({ message: "Server error while adding movie with credits", error: error.message });
+    } finally {
+        client.release();
     }
 };

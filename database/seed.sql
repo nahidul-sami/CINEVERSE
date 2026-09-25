@@ -2,6 +2,8 @@
 -- CINEVERSE SEED DATA
 -- =========================================================
 
+BEGIN;
+
 
 -- =========================================================
 -- 1. USERS
@@ -309,3 +311,5 @@ INSERT INTO users (name, username, display_name, email, password, role) VALUES
 ('Omi',  'omi21', 'Omi', 'omi21@gmail.com',  '$2b$10$SCQsvkDEb37lcsz49iofY.hSPuJRa/Pdal8.7jE7VSOTUIxJ8jZQS', 'admin'),
 ('Sami', 'sami', 'Sami', 'sami@gmail.com', '$2b$10$74dLGj.syQ3gpNwGTq.GaefzGgEQuDmuR5BYXT1A8BopZmAVj2.2C', 'admin')
 ON CONFLICT (email) DO NOTHING;
+
+COMMIT;

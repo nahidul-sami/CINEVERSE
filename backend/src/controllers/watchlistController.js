@@ -174,7 +174,7 @@ exports.removeMovieFromWatchlist = async (req, res) => {
                AND w.user_id = $3
              RETURNING wi.items_id`,
             [id, movieId, req.user.user_id]
-        ));
+                ));
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: "Movie not found in watchlist" });

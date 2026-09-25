@@ -30,14 +30,7 @@ function ProfilePage({ user, profileData, onEdit, onNavigateUser, onNavigateSear
   const watchlists = profileData?.watchlists || [];
 
   const getVisibleReviewText = (review) => {
-    const rawText = review?.review_text || 'No review text provided yet.';
-    if (
-      review?.is_spoiler ||
-      /\bspoiler\b|\bplot twist\b|\bmajor twist\b|\bfinal reveal\b|\bending reveal\b|\b(?:big|major|final|ending|surprise)\s+reveal\b|\b(?:rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man)\s+(?:dies?|gets killed)\b|\b(?:dies?|gets killed)\s+(?:in|during|at|before)\s+(?:this|the)\s+(?:movie|film|show|series|episode)\b/i.test(rawText)
-    ) {
-      return 'This review contains spoilers and is hidden for safety.';
-    }
-    return rawText;
+    return review?.review_text || 'No review text provided yet.';
   };
 
   return (

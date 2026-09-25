@@ -181,27 +181,20 @@ exports.getSentRequests = async (req, res) => {
 exports.removeFriend = async (req, res) => {
     const { id } = req.params;
 
-    const client = await pool.connect();
     try {
-        await client.query("BEGIN");
-        const result = await client.query(
+        const result = await pool.withTransaction((client) => client.query(
             "DELETE FROM friendships WHERE friendship_id = $1 AND (user_id = $2 OR friend_id = $2) RETURNING friendship_id",
             [id, req.user.user_id]
-        );
+        ));
 
         if (result.rows.length === 0) {
-            await client.query("ROLLBACK");
             return res.status(404).json({ message: "Friendship not found" });
         }
 
-        await client.query("COMMIT");
         res.status(200).json({ message: "Friendship removed successfully" });
     } catch (error) {
-        await client.query("ROLLBACK");
         console.error("REMOVE FRIEND ERROR:", error);
         res.status(500).json({ message: "Server error while removing friendship", error: error.message });
-    } finally {
-        client.release();
     }
 };
 

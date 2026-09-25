@@ -10,9 +10,6 @@ const {
 } = require("../controllers/authController");
 const { verifyToken } = require("../middleware/authMiddleware");
 
-// Public routes (Login/Register)
-// new login route post api   
-
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.post("/logout", verifyToken, logoutUser);

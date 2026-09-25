@@ -82,34 +82,10 @@ const getYouTubeEmbedUrl = (url) => {
   return match ? `https://www.youtube.com/embed/${match[1]}?autoplay=1` : null;
 };
 
-const spoilerPatterns = [
-  /\bspoiler\b/i,
-  /\bplot twist\b/i,
-  /\bmajor twist\b/i,
-  /\bfinal reveal\b/i,
-  /\bending reveal\b/i,
-  /\b(?:big|major|final|ending|surprise)\s+reveal\b/i,
-  /\bat the end\b/i,
-  /\bin the final scene\b/i,
-  /\b(?:[a-z]+)\s+(?:dies?|gets killed|is actually|turns out to be|was the killer|was the villain)\s+(?:in|during|at|before)\b/i,
-  /\b(?:dies?|gets killed|is actually|turns out to be|was the killer|was the villain)\s+(?:in|during|at|before)\s+(?:this|the)\s+(?:movie|film|show|series|episode)\b/i,
-  /\b(?:he|she|they|it|rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man|the villain|the killer|the hero|the main character|the protagonist|the character)\s+(?:dies?|gets killed|is actually|turns out to be|was the killer|was the villain)\b/i,
-  /\b(?:the villain|the killer|the hero|the main character|the mc|the protagonist|the character)\s+(?:was|is)\b/i,
-  /\breveal(?:s|ed)?\s+(?:that|who)\b/i,
-  /\b(?:killer|villain|traitor|murderer)\s+(?:is|was)\b/i,
-  /\b(?:rengoku|zenitsu|tanjiro|naruto|goku|madara|luffy|spiderman|batman|wonder woman|iron man)\s+(?:dies?|gets killed)\b/i,
-];
-
-const containsSpoilerText = (text) => {
-  if (typeof text !== 'string') return false;
-  const normalized = text.replace(/\s+/g, ' ').trim().toLowerCase();
-  if (!normalized) return false;
-  return spoilerPatterns.some((pattern) => pattern.test(normalized));
-};
-
-const getVisibleReviewText = (review) => {
+const getVisibleReviewText = (review, viewerUserId) => {
   const rawText = review?.review_text || 'No review text provided.';
-  if (review?.is_spoiler || containsSpoilerText(rawText)) {
+  const isOwner = Number(review?.user_id) === Number(viewerUserId);
+  if (!isOwner && review?.is_spoiler) {
     return 'This review contains spoilers and is hidden for safety.';
   }
   return rawText;
@@ -191,6 +167,7 @@ function App() {
   const [creditForm, setCreditForm] = useState({ name: '', person_type: 'actor', character_name: '', movie_id: '' });
   const [movieSearch, setMovieSearch] = useState('');
   const [profileData, setProfileData] = useState(null);
+  const [engagementScore, setEngagementScore] = useState(0);
   const [movieModalOpen, setMovieModalOpen] = useState(false);
   const [editingMovieId, setEditingMovieId] = useState(null);
   const [movieSubmitting, setMovieSubmitting] = useState(false);
@@ -315,7 +292,7 @@ function App() {
   useEffect(() => {
     const query = searchTerm.trim();
     if (query.length < 2) {
-      setPersonSuggestions([]);
+      window.setTimeout(() => setPersonSuggestions([]), 0);
       return undefined;
     }
     let ignore = false;
@@ -430,11 +407,13 @@ function App() {
   useEffect(() => {
     if (!token || !user || user.role === 'admin') {
       if (user?.role === 'admin') {
-        setFriends([]);
-        setPendingRequests([]);
-        setSentRequests([]);
-        setWatchlists([]);
-        setSharedWatchlists([]);
+        window.setTimeout(() => {
+          setFriends([]);
+          setPendingRequests([]);
+          setSentRequests([]);
+          setWatchlists([]);
+          setSharedWatchlists([]);
+        }, 0);
       }
       return undefined;
     }
@@ -468,6 +447,7 @@ function App() {
 
   useEffect(() => {
     if (!token) {
+      window.setTimeout(() => setRecommendations([]), 0);
       return undefined;
     }
 
@@ -478,6 +458,26 @@ function App() {
   }, [token]);
 
   useEffect(() => {
+    if (!token || !user) {
+      window.setTimeout(() => setEngagementScore(0), 0);
+      return undefined;
+    }
+
+    authApi.getEngagementScore()
+      .then((response) => setEngagementScore(Number(response.data?.engagement_score ?? 0)))
+      .catch(() => setEngagementScore(0));
+    return undefined;
+  }, [token, user]);
+
+  useEffect(() => {
+    if (!token) {
+      window.setTimeout(() => {
+        setGenres([]);
+        setMovies([]);
+      }, 0);
+      return undefined;
+    }
+
     const loadGenres = async () => {
       try {
         const response = await genreApi.getAll();
@@ -512,7 +512,7 @@ function App() {
     loadGenres();
     loadMovies();
     return () => { ignore = true; };
-  }, [selectedGenreId, debouncedSearch, showToast]);
+  }, [selectedGenreId, debouncedSearch, showToast, token]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedAdminMovieSearch(movieSearch), 180);
@@ -562,7 +562,9 @@ function App() {
   useEffect(() => {
     if (route !== '/admin' || adminTab !== 'Cast & Crew Assignment') return undefined;
     let ignore = false;
-    setPeopleLoading(true);
+    window.setTimeout(() => {
+      if (!ignore) setPeopleLoading(true);
+    }, 0);
     personApi.getAll()
       .then((response) => {
         if (!ignore) setPeople(response.data || []);
@@ -622,10 +624,10 @@ function App() {
     const list = [...movies];
 
     return list.sort((a, b) => {
-        if (sortBy === 'year') return Number(b.release_year || 0) - Number(a.release_year || 0);
-        if (sortBy === 'name') return (a.title || '').localeCompare(b.title || '');
-        return Number(b.rating || 0) - Number(a.rating || 0);
-      });
+      if (sortBy === 'year') return Number(b.release_year || 0) - Number(a.release_year || 0);
+      if (sortBy === 'name') return (a.title || '').localeCompare(b.title || '');
+      return Number(b.rating || 0) - Number(a.rating || 0);
+    });
   }, [movies, sortBy]);
 
   const visiblePeople = useMemo(() => {
@@ -713,25 +715,6 @@ function App() {
       return;
     }
 
-    const spoilerPatterns = [
-      /\bspoiler\b/i,
-      /\bplot twist\b/i,
-      /\bmajor twist\b/i,
-      /\bfinal reveal\b/i,
-      /\bending reveal\b/i,
-      /\bat the end\b/i,
-      /\bin the final scene\b/i,
-      /\b(?:he|she|they)\s+(?:dies?|gets killed|is actually|turns out to be)\b/i,
-      /\b(?:the villain|the killer|the hero|the main character)\s+(?:was|is)\b/i,
-      /\breveal(?:s|ed)?\s+(?:that|who)\b/i,
-      /\b(?:killer|villain|traitor|murderer)\s+(?:is|was)\b/i,
-    ];
-
-    if (containsSpoilerText(reviewText)) {
-      showToast('Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review.', 'error');
-      return;
-    }
-
     try {
       const payload = {
         rating: Number(reviewRating),
@@ -764,25 +747,6 @@ function App() {
   const saveReviewEdit = async () => {
     if (!editReviewText.trim()) {
       showToast('Please enter a review before saving', 'error');
-      return;
-    }
-
-    const spoilerPatterns = [
-      /\bspoiler\b/i,
-      /\bplot twist\b/i,
-      /\bmajor twist\b/i,
-      /\bfinal reveal\b/i,
-      /\bending reveal\b/i,
-      /\bat the end\b/i,
-      /\bin the final scene\b/i,
-      /\b(?:he|she|they)\s+(?:dies?|gets killed|is actually|turns out to be)\b/i,
-      /\b(?:the villain|the killer|the hero|the main character)\s+(?:was|is)\b/i,
-      /\breveal(?:s|ed)?\s+(?:that|who)\b/i,
-      /\b(?:killer|villain|traitor|murderer)\s+(?:is|was)\b/i,
-    ];
-
-    if (containsSpoilerText(editReviewText)) {
-      showToast('Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review.', 'error');
       return;
     }
 
@@ -1470,7 +1434,7 @@ function App() {
   const goToUserProfile = (targetUserId) => {
     if (!targetUserId) return;
     setActiveNav('Profile');
-    window.location.hash = `/users/${targetUserId}`;
+    window.history.pushState(null, '', `#/users/${targetUserId}`);
     setRoute(`/users/${targetUserId}`);
   };
 
@@ -1630,7 +1594,7 @@ function App() {
     if (!token) {
       return (
         <Landing
-          movies={movies}
+          movies={[]}
           onLoginClick={() => { setAuthMode('login'); window.location.hash = '/login'; setRoute('/login'); }}
           onRegisterClick={() => { setAuthMode('register'); window.location.hash = '/register'; setRoute('/register'); }}
         />
@@ -2188,7 +2152,7 @@ function App() {
                               <div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-indigo-500 text-sm font-bold text-slate-950">{review.user_name?.[0]?.toUpperCase() || 'V'}</div><div><p className="font-semibold text-white">{review.user_name || review.user || 'Viewer'}</p><p className="text-xs text-slate-400">{timeAgo(review.created_at)}</p></div></div>
                               <div className="flex items-center gap-2"><span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-sm font-semibold text-amber-300"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{toDisplayNumber(review.rating)}</span>{review.user_id === user?.user_id && <><button type="button" onClick={() => beginReviewEdit(review)} className="text-xs text-cyan-300">Edit</button>{deleteReviewId === review.review_id ? <><button type="button" onClick={() => deleteReview(review.review_id)} className="text-xs font-semibold text-rose-300">Yes</button><button type="button" onClick={() => setDeleteReviewId(null)} className="text-xs text-slate-400">Cancel</button></> : <button type="button" onClick={() => setDeleteReviewId(review.review_id)} className="text-xs text-rose-300">Delete</button>}</>}</div>
                             </div>
-                            <p className="mt-3 text-sm leading-6 text-slate-300">{getVisibleReviewText(review)}</p>
+                            <p className="mt-3 text-sm leading-6 text-slate-300">{getVisibleReviewText(review, user?.user_id)}</p>
                           </>
                         )}
                       </div>
@@ -2314,6 +2278,7 @@ function App() {
                     <div className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4"><p className="text-sm text-slate-400">Movies watched</p><p className="mt-2 text-3xl font-black text-white">{watchHistory.length || 0}</p></div>
                     <div className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4"><p className="text-sm text-slate-400">Watchlists</p><p className="mt-2 text-3xl font-black text-white">{watchlists.length || 0}</p></div>
                     <div className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4"><p className="text-sm text-slate-400">Avg. rating</p><p className="mt-2 text-3xl font-black text-amber-300">{movies.length ? toDisplayNumber(movies.reduce((sum, item) => sum + Number(item.rating || 0), 0) / movies.length) : '0.0'}</p></div>
+                    <div className="rounded-2xl border border-slate-700/80 bg-slate-900/45 p-4"><p className="text-sm text-slate-400">Engagement score</p><p className="mt-2 text-3xl font-black text-cyan-300">{engagementScore}</p></div>
                   </div>
                 </div>
 

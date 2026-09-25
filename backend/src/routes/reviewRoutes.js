@@ -6,7 +6,7 @@ const {
     updateReview,
     deleteReview
 } = require("../controllers/reviewController");
-const { verifyToken,verifyOwnership } = require("../middleware/authMiddleware");
+const { verifyToken, verifyOwnership } = require("../middleware/authMiddleware");
 
 router.get("/movie/:movieId", verifyToken, getMovieReviews);
 router.post("/", verifyToken, createReview);

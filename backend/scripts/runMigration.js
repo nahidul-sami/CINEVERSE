@@ -19,16 +19,9 @@ async function runMigration() {
         const sql = fs.readFileSync(migrationFile, "utf-8");
 
         console.log(`Running migration: ${path.basename(migrationFile)}`);
-        await pool.query("BEGIN");
-        await pool.query(sql);
-        await pool.query("COMMIT");
+        await pool.withTransaction((client) => client.query(sql));
         console.log("Migration completed successfully!");
     } catch (error) {
-        try {
-            await pool.query("ROLLBACK");
-        } catch (rollbackError) {
-            console.error("Migration rollback failed:", rollbackError.message);
-        }
         console.error("Migration failed:", error.message);
         process.exit(1);
     } finally {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Bookmark, Film, History, Star, Users } from 'lucide-react';
+import { movieApi } from '../api/api';
 
 const features = [
   { title: 'Track watched movies', description: 'Keep your viewing journey close and organize your history.', icon: History },
@@ -10,12 +11,28 @@ const features = [
 
 function Landing({ movies = [], onLoginClick, onRegisterClick }) {
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const posters = movies.filter((movie) => movie.poster_url).map((movie) => movie.poster_url);
+  const [landingMovies, setLandingMovies] = useState(movies);
+  const posters = landingMovies.filter((movie) => movie.poster_url).map((movie) => movie.poster_url);
   const shuffled = posters.length > 1 ? [...posters.slice(1), posters[0]] : posters;
   const rowA = posters.length ? [...posters, ...posters] : [];
   const rowB = posters.length ? [...posters.slice().reverse(), ...posters.slice().reverse()] : [];
   const rowC = posters.length ? [...shuffled, ...shuffled] : [];
   const rowD = posters.length ? [...shuffled.slice().reverse(), ...shuffled.slice().reverse()] : [];
+
+  useEffect(() => {
+    let ignore = false;
+    movieApi.getLanding()
+      .then(({ data }) => {
+        if (!ignore) setLandingMovies(data?.movies || []);
+      })
+      .catch(() => {
+        if (!ignore) setLandingMovies([]);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event) => {

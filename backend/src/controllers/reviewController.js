@@ -3,12 +3,12 @@ const { isSpoilerReview } = require("../utils/spoilerUtils");
 
 const formatReviewForViewer = (review, viewerUserId) => {
     const reviewText = typeof review.review_text === "string" ? review.review_text : "";
-    const isSpoiler = isSpoilerReview(reviewText);
+    const isSpoiler = Boolean(review.is_spoiler) || isSpoilerReview(reviewText);
     const isOwner = viewerUserId !== null && viewerUserId !== undefined && Number(review.user_id) === Number(viewerUserId);
 
     return {
         ...review,
-        is_spoiler: isSpoiler,
+        is_spoiler: Boolean(review.is_spoiler) || isSpoiler,
         review_text: isSpoiler && !isOwner ? "This review contains spoilers and is hidden for safety." : reviewText,
     };
 };
@@ -18,7 +18,7 @@ exports.getMovieReviews = async (req, res) => {
 
     try {
         const result = await pool.query(
-            `SELECT r.review_id, r.movie_id, r.user_id, r.rating, r.review_text,
+            `SELECT r.review_id, r.movie_id, r.user_id, r.rating, r.review_text, r.is_spoiler,
                     r.created_at, u.name AS user_name
              FROM reviews r
              JOIN users u ON u.user_id = r.user_id
@@ -55,10 +55,6 @@ exports.createReview = async (req, res) => {
         return res.status(400).json({ message: "Review text cannot be empty" });
     }
 
-    if (isSpoilerReview(review_text)) {
-        return res.status(400).json({ message: "Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review." });
-    }
-
     if (Number.isNaN(Number(rating)) || Number(rating) < 0 || Number(rating) > 10) {
         return res.status(400).json({ message: "Rating must be between 0 and 10" });
     }
@@ -73,14 +69,15 @@ exports.createReview = async (req, res) => {
         }
 
         const result = await client.query(
-            `INSERT INTO reviews (movie_id, user_id, rating, review_text)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO reviews (movie_id, user_id, rating, review_text, is_spoiler)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (user_id, movie_id)
              DO UPDATE SET rating = EXCLUDED.rating,
                            review_text = EXCLUDED.review_text,
+                           is_spoiler = EXCLUDED.is_spoiler,
                            created_at = CURRENT_TIMESTAMP
              RETURNING *`,
-            [movie_id, req.user.user_id, rating, review_text.trim()]
+            [movie_id, req.user.user_id, rating, review_text.trim(), isSpoilerReview(review_text)]
         );
         await client.query("COMMIT");
 
@@ -106,10 +103,6 @@ exports.updateReview = async (req, res) => {
         return res.status(400).json({ message: "Review text cannot be empty" });
     }
 
-    if (isSpoilerReview(review_text)) {
-        return res.status(400).json({ message: "Spoiler reviews are not allowed. Please keep the ending and major plot twists out of your review." });
-    }
-
     if (Number.isNaN(Number(rating)) || Number(rating) < 0 || Number(rating) > 10) {
         return res.status(400).json({ message: "Rating must be between 0 and 10" });
     }
@@ -119,10 +112,10 @@ exports.updateReview = async (req, res) => {
         await client.query("BEGIN");
         const result = await client.query(
             `UPDATE reviews
-             SET rating = $1, review_text = $2
-             WHERE review_id = $3 AND user_id = $4
+             SET rating = $1, review_text = $2, is_spoiler = $3
+             WHERE review_id = $4 AND user_id = $5
              RETURNING *`,
-            [rating, review_text.trim(), id, req.user.user_id]
+            [rating, review_text.trim(), isSpoilerReview(review_text), id, req.user.user_id]
         );
 
         if (result.rows.length === 0) {

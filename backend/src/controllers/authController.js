@@ -164,7 +164,7 @@ const getEngagementScore = async (req, res) => {
             [req.user.user_id]
         );
 
-        res.status(200).json({ score: result.rows[0].score });
+        res.status(200).json({ engagement_score: Number(result.rows[0].score) });
     } catch (error) {
         console.error("GET ENGAGEMENT SCORE ERROR:", error);
         res.status(500).json({ message: "Server error while calculating engagement score", error: error.message });

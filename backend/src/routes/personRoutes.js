@@ -15,12 +15,12 @@ const {
 } = require("../controllers/personController");
 const { verifyToken, verifyAdmin } = require("../middleware/authMiddleware");
 
-router.get("/search", searchPersons);
-router.get("/detail/:id", getPersonDetail);
-router.get("/tmdb/:tmdbId", getPersonFromTmdb);
-router.get("/:id/similar", getSimilarPersons);
-router.get("/", getAllPersons);
-router.get("/:id", getPersonById);
+router.get("/search", verifyToken, searchPersons);
+router.get("/detail/:id", verifyToken, getPersonDetail);
+router.get("/tmdb/:tmdbId", verifyToken, getPersonFromTmdb);
+router.get("/:id/similar", verifyToken, getSimilarPersons);
+router.get("/", verifyToken, getAllPersons);
+router.get("/:id", verifyToken, getPersonById);
 router.post("/", verifyToken, verifyAdmin, createPerson);
 router.put("/:id", verifyToken, verifyAdmin, updatePerson);
 router.delete("/:id", verifyToken, verifyAdmin, deletePerson);

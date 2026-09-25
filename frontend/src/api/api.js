@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: 'http://localhost:5000/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
   timeout: 15000,
 });
 
@@ -58,6 +58,7 @@ export const userApi = {
 };
 
 export const movieApi = {
+  getLanding: () => API.get('/movies/landing'),
   getAll: (params = {}) => API.get('/movies', { params }),
   search: (params = {}) => API.get('/movies/search', { params }),
   recommendations: (params = {}) => API.get('/movies/recommendations', { params }),
